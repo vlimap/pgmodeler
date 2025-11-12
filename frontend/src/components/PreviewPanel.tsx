@@ -44,6 +44,9 @@ export const PreviewPanel = ({
   const addForeignKey = useModelStore((s) => s.addForeignKey);
   const updateForeignKey = useModelStore((s) => s.updateForeignKey);
   const removeForeignKey = useModelStore((s) => s.removeForeignKey);
+  const convertForeignKeyToManyToMany = useModelStore(
+    (s) => s.convertForeignKeyToManyToMany,
+  );
   const setModel = useModelStore((s) => s.setModel);
   const workerRef = useRef<Worker | null>(null);
 
@@ -124,6 +127,27 @@ export const PreviewPanel = ({
     const fk = table.foreignKeys.find((f) => f.fromColumnId === column.id);
     return { table, column, fk } as const;
   }, [model.tables, selectedTableId, selectedColumnId]);
+
+  const canConvertToManyToMany = useMemo(() => {
+    if (!selected?.fk) return false;
+    if (selected.column.isPrimaryKey) return false;
+
+    const targetTable = model.tables.find((t) => t.id === selected.fk!.toTableId);
+    if (!targetTable) return false;
+
+    const targetHasColumn = targetTable.columns.some(
+      (col) => col.id === selected.fk!.toColumnId,
+    );
+    if (!targetHasColumn && targetTable.columns.length === 0) {
+      return false;
+    }
+
+    const hasAlternativeSourceColumn = selected.table.columns.some(
+      (col) => col.id !== selected.column.id,
+    );
+
+    return hasAlternativeSourceColumn;
+  }, [selected, model.tables]);
 
   const handleUpdateColumn = (patch: Partial<Column>) => {
     if (!selectedTableId || !selectedColumnId) return;
@@ -308,7 +332,7 @@ export const PreviewPanel = ({
 
                   <div>
                     <label className="block text-xs text-slate-500">Cardinalidade (início)</label>
-                  <div className="pt-2">
+                  <div className="flex flex-wrap gap-2 pt-2">
                     <button
                       type="button"
                       className="rounded-md border border-rose-300 bg-white px-3 py-1 text-sm text-rose-600"
@@ -319,6 +343,25 @@ export const PreviewPanel = ({
                       }}
                     >
                       Remover relacionamento
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-brand-300 bg-white px-3 py-1 text-sm text-brand-600 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+                      onClick={() => {
+                        if (!selected?.fk) return;
+                        const ok = convertForeignKeyToManyToMany(
+                          selected.table.id,
+                          selected.fk.id,
+                        );
+                        if (!ok) {
+                          alert(
+                            'Não foi possível converter para relacionamento muitos-para-muitos. Verifique se as tabelas possuem identificadores adequados.',
+                          );
+                        }
+                      }}
+                      disabled={!canConvertToManyToMany}
+                    >
+                      Converter em N:N
                     </button>
                   </div>
                     <select

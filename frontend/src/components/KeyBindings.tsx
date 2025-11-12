@@ -8,6 +8,8 @@ type KeyBindingsProps = {
   selectedTableId: string | null;
   selectedColumnId: string | null;
   removeColumn: (tableId: string, columnId: string) => void;
+  selectedEdge?: { tableId: string; fkId: string } | null;
+  removeForeignKey: (tableId: string, fkId: string) => void;
 };
 
 export const KeyBindings = ({
@@ -18,6 +20,8 @@ export const KeyBindings = ({
   selectedTableId,
   selectedColumnId,
   removeColumn,
+  selectedEdge,
+  removeForeignKey,
 }: KeyBindingsProps) => {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -42,6 +46,10 @@ export const KeyBindings = ({
       // Delete / Backspace -> remove selected
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
+        if (selectedEdge) {
+          removeForeignKey(selectedEdge.tableId, selectedEdge.fkId);
+          return;
+        }
         if (selectedColumnId && selectedTableId) {
           removeColumn(selectedTableId, selectedColumnId);
           return;
@@ -62,6 +70,8 @@ export const KeyBindings = ({
     removeColumn,
     selectedColumnId,
     selectedTableId,
+    selectedEdge,
+    removeForeignKey,
   ]);
 
   return null;

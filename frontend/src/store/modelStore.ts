@@ -9,7 +9,12 @@ import type {
   Table,
   TablePosition,
 } from '../types/model';
-import { ensureUniqueConstraintName, sanitizeConstraintName } from '../lib/naming';
+import {
+  ensureUniqueConstraintName,
+  sanitizeConstraintName,
+  buildConstraintName,
+  toSnakeCase,
+} from '../lib/naming';
 
 const GENERIC_PK_NAME = 'id';
 
@@ -67,6 +72,51 @@ const ensureUniqueName = (
     candidate = `${normalized}_${counter}`;
   }
   return candidate;
+};
+
+const pickReferenceColumn = (
+  table: Table,
+  preferredColumnId?: string,
+  exclude: Set<string> = new Set(),
+): Column | null => {
+  if (preferredColumnId) {
+    const preferred = table.columns.find(
+      (column) => column.id === preferredColumnId && !exclude.has(column.id),
+    );
+    if (preferred) {
+      return preferred;
+    }
+  }
+
+  const primary = table.columns.find(
+    (column) => column.isPrimaryKey && !exclude.has(column.id),
+  );
+  if (primary) {
+    return primary;
+  }
+
+  const unique = table.columns.find(
+    (column) => column.isUnique && !exclude.has(column.id),
+  );
+  if (unique) {
+    return unique;
+  }
+
+  const fallback = table.columns.find((column) => !exclude.has(column.id));
+  return fallback ?? null;
+};
+
+const buildJoinColumnName = (
+  tableName: string,
+  referencedColumnName: string,
+  existingNames: Set<string>,
+): string => {
+  const baseRaw = `${toSnakeCase(tableName)}_${toSnakeCase(referencedColumnName)}`;
+  const fallback = `${toSnakeCase(tableName)}_${GENERIC_PK_NAME}`;
+  const base = baseRaw.trim().length > 0 ? baseRaw : fallback;
+  const unique = ensureUniqueName(base, existingNames);
+  existingNames.add(unique);
+  return unique;
 };
 
 const normalizeFkCardinality = (
@@ -131,6 +181,7 @@ type ModelState = {
     patch: Partial<ForeignKey>,
   ) => void;
   removeForeignKey: (tableId: string, fkId: string) => void;
+  convertForeignKeyToManyToMany: (tableId: string, fkId: string) => boolean;
   setTablePosition: (tableId: string, position: TablePosition) => void;
   setTablePositions: (positions: Record<string, TablePosition>) => void;
   addType: (type: CustomType) => void;
@@ -570,6 +621,205 @@ export const useModelStore = create<ModelState>()(
             ),
           },
         }));
+      },
+
+      convertForeignKeyToManyToMany: (tableId, fkId) => {
+        let success = false;
+        set((state) => {
+          const tableIndex = state.model.tables.findIndex(
+            (table) => table.id === tableId,
+          );
+          if (tableIndex === -1) {
+            return state;
+          }
+
+          const table = state.model.tables[tableIndex];
+          const fkIndex = table.foreignKeys.findIndex((fk) => fk.id === fkId);
+          if (fkIndex === -1) {
+            return state;
+          }
+
+          const fk = table.foreignKeys[fkIndex];
+          const sourceColumn = table.columns.find(
+            (column) => column.id === fk.fromColumnId,
+          );
+          const targetTableIndex = state.model.tables.findIndex(
+            (candidate) => candidate.id === fk.toTableId,
+          );
+
+          if (!sourceColumn || targetTableIndex === -1) {
+            return state;
+          }
+
+          if (sourceColumn.isPrimaryKey) {
+            return state;
+          }
+
+          const targetTable = state.model.tables[targetTableIndex];
+          const targetColumn = targetTable.columns.find(
+            (column) => column.id === fk.toColumnId,
+          );
+
+          if (!targetColumn) {
+            return state;
+          }
+
+          const excluded = new Set<string>([sourceColumn.id]);
+          const sourceReference = pickReferenceColumn(table, undefined, excluded);
+          const targetReference = pickReferenceColumn(
+            targetTable,
+            targetColumn.id,
+          );
+
+          if (!sourceReference || !targetReference) {
+            return state;
+          }
+
+          const schemaId = table.schemaId;
+          const schemaTables = state.model.tables.filter(
+            (candidate) => candidate.schemaId === schemaId,
+          );
+
+          const orderedNames = [table.name, targetTable.name].sort((a, b) =>
+            a.localeCompare(b),
+          );
+          const baseNameRaw = `${orderedNames.join('_')}_link`;
+          const baseNameSanitized =
+            toSnakeCase(baseNameRaw) ||
+            `${toSnakeCase(table.name)}_${toSnakeCase(targetTable.name)}_link`;
+          const baseName = baseNameSanitized || 'relacionamento_link';
+          const joinTableName = ensureUniqueName(
+            baseName,
+            schemaTables.map((item) => item.name),
+          );
+          const joinTableId = createId();
+
+          const joinColumnNames = new Set<string>();
+          const leftColumn: Column = {
+            id: createId(),
+            name: buildJoinColumnName(
+              table.name,
+              sourceReference.name,
+              joinColumnNames,
+            ),
+            type: sourceReference.type,
+            nullable: false,
+            defaultValue: undefined,
+            isPrimaryKey: true,
+            isUnique: false,
+          };
+
+          const rightColumn: Column = {
+            id: createId(),
+            name: buildJoinColumnName(
+              targetTable.name,
+              targetReference.name,
+              joinColumnNames,
+            ),
+            type: targetReference.type,
+            nullable: false,
+            defaultValue: undefined,
+            isPrimaryKey: true,
+            isUnique: false,
+          };
+
+          const fkNames = new Set<string>();
+          const leftFkId = createId();
+          const leftFkNameBase = buildConstraintName(
+            [joinTableName, leftColumn.name, table.name, 'fk'],
+            `fk_${leftFkId.slice(0, 8)}`,
+          );
+          const leftFkName = ensureUniqueConstraintName(leftFkNameBase, fkNames);
+          fkNames.add(leftFkName);
+
+          const rightFkId = createId();
+          const rightFkNameBase = buildConstraintName(
+            [joinTableName, rightColumn.name, targetTable.name, 'fk'],
+            `fk_${rightFkId.slice(0, 8)}`,
+          );
+          const rightFkName = ensureUniqueConstraintName(
+            rightFkNameBase,
+            fkNames,
+          );
+          fkNames.add(rightFkName);
+
+          const leftFk: ForeignKey = {
+            id: leftFkId,
+            name: leftFkName,
+            fromColumnId: leftColumn.id,
+            toTableId: table.id,
+            toColumnId: sourceReference.id,
+            startCardinality: 'many',
+            endCardinality: 'one',
+          };
+
+          const rightFk: ForeignKey = {
+            id: rightFkId,
+            name: rightFkName,
+            fromColumnId: rightColumn.id,
+            toTableId: targetTable.id,
+            toColumnId: targetReference.id,
+            startCardinality: 'many',
+            endCardinality: 'one',
+          };
+
+          const positions = [table.position, targetTable.position].filter(
+            (pos): pos is TablePosition => !!pos,
+          );
+
+          let joinPosition: TablePosition | undefined;
+          if (positions.length > 0) {
+            const avgX =
+              positions.reduce((acc, pos) => acc + pos.x, 0) / positions.length;
+            const avgY =
+              positions.reduce((acc, pos) => acc + pos.y, 0) / positions.length;
+            joinPosition = { x: avgX + 40, y: avgY + 40 };
+          }
+
+          const sourceColumnId = sourceColumn.id;
+
+          const sanitizedTables = state.model.tables.map((candidate, index) => {
+            if (index === tableIndex) {
+              return {
+                ...candidate,
+                columns: candidate.columns.filter(
+                  (column) => column.id !== sourceColumnId,
+                ),
+                foreignKeys: candidate.foreignKeys.filter(
+                  (item) => item.id !== fk.id && item.fromColumnId !== sourceColumnId,
+                ),
+              };
+            }
+
+            return {
+              ...candidate,
+              foreignKeys: candidate.foreignKeys.filter(
+                (item) => item.toColumnId !== sourceColumnId,
+              ),
+            };
+          });
+
+          const nextTables = [...sanitizedTables];
+          nextTables.splice(tableIndex + 1, 0, {
+            id: joinTableId,
+            schemaId,
+            name: joinTableName,
+            columns: [leftColumn, rightColumn],
+            foreignKeys: [leftFk, rightFk],
+            position: joinPosition,
+          });
+
+          success = true;
+          return {
+            model: {
+              ...state.model,
+              tables: nextTables,
+            },
+            selectedTableId: joinTableId,
+            selectedColumnId: leftColumn.id,
+          };
+        });
+        return success;
       },
 
       setTablePosition: (tableId, position) => {

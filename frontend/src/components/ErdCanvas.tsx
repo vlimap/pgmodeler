@@ -121,6 +121,7 @@ const ErdCanvasInner = () => {
   const removeColumn = useModelStore((state) => state.removeColumn);
   const addForeignKey = useModelStore((state) => state.addForeignKey);
   const updateForeignKey = useModelStore((state) => state.updateForeignKey);
+  const removeForeignKey = useModelStore((state) => state.removeForeignKey);
 
   const schemaById = useMemo(
     () => new Map(model.schemas.map((schema) => [schema.id, schema.name])),
@@ -195,6 +196,18 @@ const ErdCanvasInner = () => {
   const removeTable = useModelStore((s) => s.removeTable);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const reactFlowInstanceRef = useRef<ReactFlowInstance<TableNodeType, CrowFootEdgeType> | null>(null);
+
+  useEffect(() => {
+    if (!selectedTableId) {
+      return;
+    }
+    if (selectedNodeIds.includes(selectedTableId)) {
+      return;
+    }
+    if (selectedNodeIds.length <= 1) {
+      setSelectedNodeIds([selectedTableId]);
+    }
+  }, [selectedTableId, selectedNodeIds]);
 
   const selectedEdgeInfo = useMemo(
     () => (selectedEdgeId ? fkInfoById.get(selectedEdgeId) ?? null : null),
@@ -1088,6 +1101,12 @@ const ErdCanvasInner = () => {
         selectedTableId={selectedTableId}
         selectedColumnId={selectedColumnId}
         removeColumn={removeColumn}
+        selectedEdge={
+          selectedEdgeInfo
+            ? { tableId: selectedEdgeInfo.sourceTableId, fkId: selectedEdgeInfo.fkId }
+            : null
+        }
+        removeForeignKey={removeForeignKey}
       />
       {selectedEdgeInfo && (
         <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2">
