@@ -625,9 +625,10 @@ const ErdCanvasInner = () => {
       host.appendChild(canvas);
       document.body.appendChild(host);
 
+      type AnchorPoint = { x: number; y: number; orientation: Position | null };
       const anchorPositions = new Map<
         string,
-        Map<string, { source?: { x: number; y: number }; target?: { x: number; y: number } }>
+        Map<string, { source?: AnchorPoint; target?: AnchorPoint }>
       >();
       const tableSizes = new Map<string, { width: number; height: number }>();
       const svgNS = 'http://www.w3.org/2000/svg';
@@ -655,9 +656,15 @@ const ErdCanvasInner = () => {
             handleEl.id ??
             '';
           if (!rawId) return;
-          const [handleType, ...rest] = rawId.split('-');
-          if (rest.length === 0) return;
-          const columnId = rest.join('-');
+          const tokens = rawId.split('-');
+          const handleType = tokens.shift();
+          if (!handleType) return;
+          let orientationToken: string | null = null;
+          if (tokens[0] === 'left' || tokens[0] === 'right' || tokens[0] === 'top' || tokens[0] === 'bottom') {
+            orientationToken = tokens.shift() ?? null;
+          }
+          if (tokens.length === 0) return;
+          const columnId = tokens.join('-');
           const handleRect = handleEl.getBoundingClientRect();
           const offsetX = (handleRect.left - nodeRect.left + handleRect.width / 2) / zoom;
           const offsetY = (handleRect.top - nodeRect.top + handleRect.height / 2) / zoom;
@@ -665,10 +672,20 @@ const ErdCanvasInner = () => {
           const absY = pos.y - exportBounds.minY + offsetY;
           const columnMap =
             anchorPositions.get(table.id) ??
-            new Map<string, { source?: { x: number; y: number }; target?: { x: number; y: number } }>();
+            new Map<string, { source?: AnchorPoint; target?: AnchorPoint }>();
           const entry = columnMap.get(columnId) ?? {};
           if (handleType === 'source' || handleType === 'target') {
-            entry[handleType] = { x: absX, y: absY };
+            const orientation =
+              orientationToken === 'left'
+                ? Position.Left
+                : orientationToken === 'right'
+                ? Position.Right
+                : orientationToken === 'top'
+                ? Position.Top
+                : orientationToken === 'bottom'
+                ? Position.Bottom
+                : null;
+            entry[handleType] = { x: absX, y: absY, orientation };
           }
           columnMap.set(columnId, entry);
           anchorPositions.set(table.id, columnMap);
@@ -767,8 +784,8 @@ const ErdCanvasInner = () => {
         tableId: string,
         columnId: string,
         kind: 'source' | 'target',
-        fallback: { x: number; y: number },
-      ) => {
+        fallback: AnchorPoint,
+      ): AnchorPoint => {
         const map = anchorPositions.get(tableId);
         const entry = map?.get(columnId);
         const anchor = entry?.[kind];
@@ -782,11 +799,26 @@ const ErdCanvasInner = () => {
       const defaultRowHeight = 56;
 
       const adjustAnchor = (
-        point: { x: number; y: number },
+        point: AnchorPoint,
+        defaultOrientation: Position,
         kind: 'source' | 'target',
-      ) => {
-        const offset = kind === 'source' ? 16 : -16;
-        return { x: point.x + offset, y: point.y };
+      ): AnchorPoint => {
+        const orientation = point.orientation ?? defaultOrientation;
+        const shift = 12;
+        if (orientation === Position.Left) {
+          return { x: point.x - shift, y: point.y, orientation };
+        }
+        if (orientation === Position.Right) {
+          return { x: point.x + shift, y: point.y, orientation };
+        }
+        if (orientation === Position.Top) {
+          return { x: point.x, y: point.y - shift, orientation };
+        }
+        if (orientation === Position.Bottom) {
+          return { x: point.x, y: point.y + shift, orientation };
+        }
+        const fallbackShift = kind === 'source' ? shift : -shift;
+        return { x: point.x + fallbackShift, y: point.y, orientation: defaultOrientation };
       };
 
       model.tables.forEach((sourceTable) => {
@@ -805,43 +837,80 @@ const ErdCanvasInner = () => {
           const sourcePos = sourceTable.position ?? placeholderPosition(sourceInfo.index);
           const targetPos = targetTable.position ?? placeholderPosition(targetInfo.index);
 
-          const sourceSize = tableSizes.get(sourceTable.id) ?? { width: 256, height: defaultHeaderHeight + sourceTable.columns.length * defaultRowHeight };
+          const sourceSize = tableSizes.get(sourceTable.id) ?? {
+            width: 256,
+            height: defaultHeaderHeight + sourceTable.columns.length * defaultRowHeight,
+          };
+          const targetSize = tableSizes.get(targetTable.id) ?? {
+            width: 256,
+            height: defaultHeaderHeight + targetTable.columns.length * defaultRowHeight,
+          };
 
-          const sourceFallback = {
-            x: sourcePos.x - exportBounds.minX + sourceSize.width,
+          const targetIsLeftOfSource = targetPos.x < sourcePos.x - 1;
+          const sourceFallbackOrientation = targetIsLeftOfSource ? Position.Left : Position.Right;
+          const targetFallbackOrientation = targetIsLeftOfSource ? Position.Right : Position.Left;
+
+          const sourceFallback: AnchorPoint = {
+            x:
+              sourceFallbackOrientation === Position.Right
+                ? sourcePos.x - exportBounds.minX + sourceSize.width
+                : sourcePos.x - exportBounds.minX,
             y:
               sourcePos.y -
               exportBounds.minY +
               defaultHeaderHeight +
               sourceIndex * defaultRowHeight +
               defaultRowHeight / 2,
+            orientation: sourceFallbackOrientation,
           };
-          const targetFallback = {
-            x: targetPos.x - exportBounds.minX,
+          const targetFallback: AnchorPoint = {
+            x:
+              targetFallbackOrientation === Position.Left
+                ? targetPos.x - exportBounds.minX
+                : targetPos.x - exportBounds.minX + targetSize.width,
             y:
               targetPos.y -
               exportBounds.minY +
               defaultHeaderHeight +
               targetIndex * defaultRowHeight +
               defaultRowHeight / 2,
+            orientation: targetFallbackOrientation,
           };
 
+          const sourceAnchor = getAnchor(
+            sourceTable.id,
+            fk.fromColumnId,
+            'source',
+            sourceFallback,
+          );
+          const targetAnchor = getAnchor(
+            targetTable.id,
+            fk.toColumnId,
+            'target',
+            targetFallback,
+          );
+
           const sourcePoint = adjustAnchor(
-            getAnchor(sourceTable.id, fk.fromColumnId, 'source', sourceFallback),
+            sourceAnchor,
+            sourceFallbackOrientation,
             'source',
           );
           const targetPoint = adjustAnchor(
-            getAnchor(targetTable.id, fk.toColumnId, 'target', targetFallback),
+            targetAnchor,
+            targetFallbackOrientation,
             'target',
           );
+
+          const sourcePositionForPath = sourcePoint.orientation ?? sourceFallbackOrientation;
+          const targetPositionForPath = targetPoint.orientation ?? targetFallbackOrientation;
 
           const [edgePath] = getSmoothStepPath({
             sourceX: sourcePoint.x,
             sourceY: sourcePoint.y,
             targetX: targetPoint.x,
             targetY: targetPoint.y,
-            sourcePosition: Position.Right,
-            targetPosition: Position.Left,
+            sourcePosition: sourcePositionForPath,
+            targetPosition: targetPositionForPath,
           });
 
           const fromColumn = sourceTable.columns[sourceIndex];

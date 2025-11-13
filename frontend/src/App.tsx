@@ -19,6 +19,7 @@ import { MarketingConsentModal } from './components/MarketingConsentModal';
 import { DesktopOnlyNotice } from './components/DesktopOnlyNotice';
 import { useThemeStore } from './store/themeStore';
 import { FeedbackModal } from './components/FeedbackModal';
+import { ConfettiOverlay } from './components/ConfettiOverlay';
 
 type PreviewTab = 'json' | 'sql';
 
@@ -62,6 +63,7 @@ export const App = () => {
   const [showConsent, setShowConsent] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
   const [feedbackUsageCount, setFeedbackUsageCount] = useState(0);
   const themeMode = useThemeStore((state) => state.mode);
   const toggleTheme = useThemeStore((state) => state.toggle);
@@ -360,6 +362,7 @@ export const App = () => {
         });
         window.localStorage.setItem(FEEDBACK_COMPLETED_KEY, '1');
         setShowFeedback(false);
+        setShowConfetti(true);
       } catch (error) {
         console.error('Falha ao enviar feedback', error);
         throw error instanceof Error ? error : new Error('Não foi possível registrar o feedback.');
@@ -430,6 +433,7 @@ export const App = () => {
         onOpenLogin={() => setShowLogin(true)}
         onOpenProjects={() => setShowProjects(true)}
         onOpenAccount={() => setShowAccount(true)}
+        onOpenFeedback={() => setShowFeedback(true)}
         themeMode={themeMode}
         onToggleTheme={toggleTheme}
       />
@@ -504,6 +508,9 @@ export const App = () => {
           onDecline={() => handleMarketingConsent(false)}
         />
         <FeedbackModal open={showFeedback} onSubmit={handleSubmitFeedback} />
+        {showConfetti && (
+          <ConfettiOverlay onDone={() => setShowConfetti(false)} />
+        )}
       </div>
     </div>
   );

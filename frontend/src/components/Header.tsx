@@ -16,6 +16,7 @@ type HeaderProps = {
   onOpenLogin?: () => void;
   onOpenProjects?: () => void;
   onOpenAccount?: () => void;
+  onOpenFeedback?: () => void;
   themeMode: 'light' | 'dark';
   onToggleTheme: () => void;
 };
@@ -43,6 +44,7 @@ export const Header = ({
   onOpenLogin,
   onOpenProjects,
   onOpenAccount,
+  onOpenFeedback,
   themeMode,
   onToggleTheme,
 }: HeaderProps) => {
@@ -152,6 +154,17 @@ export const Header = ({
         </div>
       </div>
       <div className="flex items-center gap-3">
+        {onOpenFeedback && (
+          <button
+            type="button"
+            onClick={onOpenFeedback}
+            className={buttonBase}
+            title="Compartilhar feedback"
+          >
+            <i className="bi bi-chat-left-heart" aria-hidden="true" />
+            Enviar feedback
+          </button>
+        )}
         <button
           type="button"
           onClick={onToggleTheme}
