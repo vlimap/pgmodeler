@@ -82,9 +82,17 @@ const buildTableStatement = (
     }
   });
 
-  const tableDefinition = `CREATE TABLE ${qualify(schemaName, table.name)} (\n  ${columnDefinitions.join(
+  const multilineTableDefinition = `CREATE TABLE ${qualify(schemaName, table.name)} (\n  ${columnDefinitions.join(
     ',\n  ',
   )}\n);`;
+
+  const inlineDefinitions = columnDefinitions.join(', ');
+  const prefersInline =
+    columnDefinitions.length <= 3 && inlineDefinitions.length <= 120;
+
+  const tableDefinition = prefersInline
+    ? `CREATE TABLE ${qualify(schemaName, table.name)} (${inlineDefinitions});`
+    : multilineTableDefinition;
 
   const comments: string[] = [];
   if (table.comment) {
@@ -101,6 +109,111 @@ const buildTableStatement = (
   });
 
   return [tableDefinition, ...comments].join('\n');
+};
+
+const topologicallySortTables = (
+  tables: Table[],
+  getSchemaName: (schemaId: string) => string,
+  tableById: Map<string, Table>,
+): Table[] => {
+  const dependencyMap = new Map<string, Set<string>>();
+  const dependentsMap = new Map<string, Set<string>>();
+
+  tables.forEach((table) => {
+    const dependencies = new Set<string>();
+
+    table.foreignKeys.forEach((fk) => {
+      if (!fk.toTableId || fk.toTableId === table.id) {
+        return;
+      }
+
+      if (!tableById.has(fk.toTableId)) {
+        return;
+      }
+
+      dependencies.add(fk.toTableId);
+
+      const dependents = dependentsMap.get(fk.toTableId) ?? new Set<string>();
+      dependents.add(table.id);
+      dependentsMap.set(fk.toTableId, dependents);
+    });
+
+    dependencyMap.set(table.id, dependencies);
+  });
+
+  const compareBySchemaAndName = (leftId: string, rightId: string): number => {
+    const leftTable = tableById.get(leftId);
+    const rightTable = tableById.get(rightId);
+    if (!leftTable || !rightTable) {
+      return 0;
+    }
+
+    const schemaComparison = getSchemaName(leftTable.schemaId).localeCompare(
+      getSchemaName(rightTable.schemaId),
+    );
+    if (schemaComparison !== 0) {
+      return schemaComparison;
+    }
+
+    return leftTable.name.localeCompare(rightTable.name);
+  };
+
+  const readyQueue = tables
+    .filter((table) => (dependencyMap.get(table.id)?.size ?? 0) === 0)
+    .map((table) => table.id)
+    .sort(compareBySchemaAndName);
+
+  const ordered: Table[] = [];
+  const visited = new Set<string>();
+
+  while (readyQueue.length > 0) {
+    const currentId = readyQueue.shift();
+    if (!currentId || visited.has(currentId)) {
+      continue;
+    }
+    visited.add(currentId);
+
+    const currentTable = tableById.get(currentId);
+    if (!currentTable) {
+      continue;
+    }
+    ordered.push(currentTable);
+
+    const dependents = dependentsMap.get(currentId);
+    if (!dependents) {
+      continue;
+    }
+
+    dependents.forEach((dependentId) => {
+      const dependencies = dependencyMap.get(dependentId);
+      if (!dependencies) {
+        return;
+      }
+
+      dependencies.delete(currentId);
+      if (dependencies.size === 0) {
+        const insertIndex = readyQueue.findIndex(
+          (queuedId) => compareBySchemaAndName(dependentId, queuedId) < 0,
+        );
+        if (insertIndex === -1) {
+          readyQueue.push(dependentId);
+        } else {
+          readyQueue.splice(insertIndex, 0, dependentId);
+        }
+      }
+    });
+  }
+
+  if (ordered.length !== tables.length) {
+    const remaining = tables.filter((table) => !visited.has(table.id));
+    remaining
+      .sort((a, b) => compareBySchemaAndName(a.id, b.id))
+      .forEach((table) => {
+        ordered.push(table);
+      });
+  }
+
+  return ordered;
 };
 
 export const generatePostgresSql = (model: DbModel): string => {
@@ -144,32 +257,25 @@ export const generatePostgresSql = (model: DbModel): string => {
     });
   });
 
-  const tablesBySchema = new Map<string, Table[]>();
-  model.tables.forEach((table) => {
-    const group = tablesBySchema.get(table.schemaId) ?? [];
-    group.push(table);
-    tablesBySchema.set(table.schemaId, group);
+  const getSchemaName = (schemaId: string): string =>
+    schemaById.get(schemaId) ?? 'public';
+
+  const orderedTables = topologicallySortTables(
+    model.tables,
+    getSchemaName,
+    tableById,
+  );
+
+  orderedTables.forEach((table) => {
+    statements.push(
+      buildTableStatement(
+        table,
+        getSchemaName(table.schemaId),
+        (id) => tableById.get(id),
+        getSchemaName,
+      ),
+    );
   });
 
-  sortedSchemas.forEach((schema) => {
-    const tables = tablesBySchema.get(schema.id);
-    if (!tables) {
-      return;
-    }
-
-    tables
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .forEach((table) => {
-        statements.push(
-          buildTableStatement(
-            table,
-            schema.name,
-            (id) => tableById.get(id),
-            (schemaId) => schemaById.get(schemaId) ?? 'public',
-          ),
-        );
-      });
-  });
-
-  return statements.join('\n\n');
+  return statements.join('\n');
 };

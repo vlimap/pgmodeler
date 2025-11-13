@@ -17,6 +17,7 @@ import { useModelStore } from './store/modelStore';
 import { api, type ApiProject, type ApiUser } from './lib/api';
 import { MarketingConsentModal } from './components/MarketingConsentModal';
 import { DesktopOnlyNotice } from './components/DesktopOnlyNotice';
+import { useThemeStore } from './store/themeStore';
 
 type PreviewTab = 'json' | 'sql';
 
@@ -56,6 +57,16 @@ export const App = () => {
   const [showProjects, setShowProjects] = useState(false);
   const [showConsent, setShowConsent] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
+  const themeMode = useThemeStore((state) => state.mode);
+  const toggleTheme = useThemeStore((state) => state.toggle);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const body = document.body;
+    root.classList.toggle('dark', themeMode === 'dark');
+    body.classList.toggle('dark', themeMode === 'dark');
+    root.style.colorScheme = themeMode === 'dark' ? 'dark' : 'light';
+  }, [themeMode]);
 
   // Carrega projetos remotos e popula o modal do Workspace.
   const loadProjects = useCallback(async () => {
@@ -270,6 +281,33 @@ export const App = () => {
     }
   };
 
+  const joyrideStyles = useMemo(
+    () => ({
+      options: {
+        zIndex: 10000,
+        primaryColor: '#285d9f',
+        textColor: themeMode === 'dark' ? '#e2e8f0' : '#0f172a',
+        backgroundColor: themeMode === 'dark' ? '#0f172a' : '#ffffff',
+      },
+      buttonNext: {
+        backgroundColor: '#285d9f',
+        borderColor: '#285d9f',
+        borderRadius: 9999,
+        color: '#ffffff',
+      },
+      buttonBack: {
+        color: '#285d9f',
+      },
+      buttonSkip: {
+        color: '#285d9f',
+      },
+      buttonClose: {
+        color: '#285d9f',
+      },
+    }),
+    [themeMode],
+  );
+
   useEffect(() => {
     if (isMobile === null) return;
     const seen = localStorage.getItem('hasSeenTour');
@@ -290,7 +328,11 @@ export const App = () => {
   }, []);
 
   if (isMobile !== false) {
-    return <DesktopOnlyNotice force />;
+    return (
+      <div className={themeMode === 'dark' ? 'dark h-full bg-white dark:bg-slate-950' : 'h-full bg-white'}>
+        <DesktopOnlyNotice force />
+      </div>
+    );
   }
 
   const tourSteps = [
@@ -330,7 +372,8 @@ export const App = () => {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={themeMode === 'dark' ? 'dark h-full bg-white dark:bg-slate-950' : 'h-full bg-white'}>
+      <div className="flex h-full flex-col bg-white text-slate-900 transition-colors duration-200 ease-out dark:bg-slate-950 dark:text-slate-100">
       <Header
         issues={issues}
         onNew={handleNewProject}
@@ -347,98 +390,80 @@ export const App = () => {
         onOpenLogin={() => setShowLogin(true)}
         onOpenProjects={() => setShowProjects(true)}
         onOpenAccount={() => setShowAccount(true)}
+        themeMode={themeMode}
+        onToggleTheme={toggleTheme}
       />
-      {/* Joyride guided tour */}
-      <Joyride
-        steps={tourSteps}
-        run={isMobile === false && runTour}
-        continuous
-        showSkipButton
-        callback={handleTourCallback}
-        styles={{
-          options: {
-            zIndex: 10000,
-            primaryColor: '#285d9f',
-            textColor: '#0f172a',
-          },
-          buttonNext: {
-            backgroundColor: '#285d9f',
-            borderColor: '#285d9f',
-            borderRadius: 9999,
-            color: '#ffffff',
-          },
-          buttonBack: {
-            color: '#285d9f',
-          },
-          buttonSkip: {
-            color: '#285d9f',
-          },
-          buttonClose: {
-            color: '#285d9f',
-          },
-        }}
-        locale={{
-          back: 'Anterior',
-          close: 'Fechar',
-          last: 'Finalizar',
-          next: 'Próximo',
-          skip: 'Pular',
-        }}
-      />
-      <div className="flex flex-1 overflow-hidden bg-slate-100 min-h-0">
-        <Sidebar />
-        <main className="flex flex-1 items-stretch overflow-hidden">
-          {showErd ? (
-            <div className="flex-1 bg-slate-100">
-              <ErdCanvas />
-            </div>
-          ) : (
-            <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
-              ERD oculto. Ative novamente para visualizar o diagrama.
-            </div>
-          )}
-        </main>
-        <PreviewPanel
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          modelJson={modelJson}
-          sql={sql}
-          issues={issues}
+        {/* Joyride guided tour */}
+        <Joyride
+          steps={tourSteps}
+          run={isMobile === false && runTour}
+          continuous
+          showSkipButton
+          callback={handleTourCallback}
+          styles={joyrideStyles}
+          locale={{
+            back: 'Anterior',
+            close: 'Fechar',
+            last: 'Finalizar',
+            next: 'Próximo',
+            skip: 'Pular',
+          }}
+        />
+        <div className="flex flex-1 overflow-hidden bg-white min-h-0 transition-colors dark:bg-slate-900">
+          <Sidebar />
+          <main className="flex flex-1 items-stretch overflow-hidden">
+            {showErd ? (
+              <div className="flex-1 bg-white transition-colors dark:bg-slate-900">
+                <ErdCanvas />
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center justify-center text-sm text-slate-500 dark:text-slate-300">
+                ERD oculto. Ative novamente para visualizar o diagrama.
+              </div>
+            )}
+          </main>
+          <PreviewPanel
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            modelJson={modelJson}
+            sql={sql}
+            issues={issues}
+          />
+        </div>
+        <MetricsFooter
+          schemas={metrics.schemas}
+          tables={metrics.tables}
+          columns={metrics.columns}
+          indexes={metrics.indexes}
+          warnings={metrics.warnings}
+        />
+
+        {/* Modals for login and projects */}
+        <GithubLoginModal open={showLogin} onClose={() => setShowLogin(false)} />
+        <ProjectsModal
+          open={showProjects}
+          onClose={() => setShowProjects(false)}
+          projects={currentProjects}
+          onSave={(name: string) => handleSaveProject(name)}
+          onLoad={(id: string) => handleLoadProject(id)}
+          onDelete={(id: string) => handleDeleteProject(id)}
+          loading={projectsLoading}
+        />
+        {user && (
+          <AccountModal
+            open={showAccount}
+            onClose={() => setShowAccount(false)}
+            user={user}
+            onLogout={handleLogout}
+            onToggleMarketing={handleMarketingConsent}
+          />
+        )}
+        <MarketingConsentModal
+          open={showConsent}
+          onAccept={() => handleMarketingConsent(true)}
+          onDecline={() => handleMarketingConsent(false)}
         />
       </div>
-      <MetricsFooter
-        schemas={metrics.schemas}
-        tables={metrics.tables}
-        columns={metrics.columns}
-        indexes={metrics.indexes}
-        warnings={metrics.warnings}
-      />
-
-      {/* Modals for login and projects */}
-      <GithubLoginModal open={showLogin} onClose={() => setShowLogin(false)} />
-      <ProjectsModal
-        open={showProjects}
-        onClose={() => setShowProjects(false)}
-        projects={currentProjects}
-        onSave={(name: string) => handleSaveProject(name)}
-        onLoad={(id: string) => handleLoadProject(id)}
-        onDelete={(id: string) => handleDeleteProject(id)}
-        loading={projectsLoading}
-      />
-      {user && (
-        <AccountModal
-          open={showAccount}
-          onClose={() => setShowAccount(false)}
-          user={user}
-          onLogout={handleLogout}
-          onToggleMarketing={handleMarketingConsent}
-        />
-      )}
-      <MarketingConsentModal
-        open={showConsent}
-        onAccept={() => handleMarketingConsent(true)}
-        onDecline={() => handleMarketingConsent(false)}
-      />
     </div>
   );
 };

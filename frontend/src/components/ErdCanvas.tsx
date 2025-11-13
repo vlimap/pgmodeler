@@ -3,10 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Background,
   Controls,
-  MiniMap,
   ReactFlow,
   ReactFlowProvider,
-  applyNodeChanges,
   Position,
   getSmoothStepPath,
   type NodeTypes,
@@ -17,9 +15,10 @@ import {
 } from '@xyflow/react';
 import KeyBindings from './KeyBindings';
 import { useRef } from 'react';
-import type { Column, ForeignKey, Table } from '../types/model';
+import type { Column, ForeignKey, Table, TablePosition } from '../types/model';
 import { computeLayout } from '../lib/layout';
 import { useModelStore } from '../store/modelStore';
+import { useThemeStore } from '../store/themeStore';
 import { CrowFootEdge, type CrowFootEdgeType, computeKindsFromModel, computeKindsForEdgeData, normalizeCardinality, type Kind, type CrowFootEdgeData } from './CrowFootEdge';
 import { TableNode, type TableNodeType } from './TableNode';
 import { buildConstraintName } from '../lib/naming';
@@ -38,7 +37,6 @@ const placeholderPosition = (index: number): { x: number; y: number } => ({
 });
 
 const BRAND_COLOR_HEX = '#285d9f';
-const BRAND_DARK_HEX = '#1b4070';
 
 const computeDiagramBounds = (tables: Table[], padding = 32) => {
   let minX = Infinity;
@@ -122,6 +120,26 @@ const ErdCanvasInner = () => {
   const addForeignKey = useModelStore((state) => state.addForeignKey);
   const updateForeignKey = useModelStore((state) => state.updateForeignKey);
   const removeForeignKey = useModelStore((state) => state.removeForeignKey);
+  const undo = useModelStore((state) => state.undo);
+  const themeMode = useThemeStore((state) => state.mode);
+
+  useEffect(() => {
+    if (model.tables.length === 0) {
+      return;
+    }
+
+    const positionsToPatch: Record<string, TablePosition> = {};
+    model.tables.forEach((table, index) => {
+      const pos = table.position;
+      if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) {
+        positionsToPatch[table.id] = placeholderPosition(index);
+      }
+    });
+
+    if (Object.keys(positionsToPatch).length > 0) {
+      setTablePositions(positionsToPatch);
+    }
+  }, [model.tables, setTablePositions]);
 
   const schemaById = useMemo(
     () => new Map(model.schemas.map((schema) => [schema.id, schema.name])),
@@ -258,6 +276,7 @@ const ErdCanvasInner = () => {
         table,
         schemaName: schemaById.get(table.schemaId) ?? 'public',
         selectedColumnId,
+        foreignKeyColumnIds: table.foreignKeys.map((fk) => fk.fromColumnId),
         onSelectColumn: handleSelectColumn,
         onUpdateColumn: handleUpdateColumn,
         onAddColumn: handleAddColumn,
@@ -288,6 +307,18 @@ const ErdCanvasInner = () => {
   const edges = useMemo<CrowFootEdgeType[]>(() => {
     const list: CrowFootEdgeType[] = [];
     fkInfoById.forEach((info) => {
+      const sourceTable = tablesById.get(info.sourceTableId);
+      const targetTable = tablesById.get(info.targetTableId);
+      let sourceHandle = `source-${info.sourceColumnId}`;
+      let targetHandle = `target-${info.targetColumnId}`;
+
+      if (sourceTable?.position && targetTable?.position) {
+        if (targetTable.position.x < sourceTable.position.x - 1) {
+          sourceHandle = `source-left-${info.sourceColumnId}`;
+          targetHandle = `target-right-${info.targetColumnId}`;
+        }
+      }
+
       list.push({
         id: info.fkId,
         source: info.sourceTableId,
@@ -295,8 +326,8 @@ const ErdCanvasInner = () => {
         type: 'crowFoot',
         animated: false,
         interactionWidth: 20,
-        sourceHandle: `source-${info.sourceColumnId}`,
-        targetHandle: `target-${info.targetColumnId}`,
+        sourceHandle,
+        targetHandle,
         data: {
           start: info.startKind,
           end: info.endKind,
@@ -309,17 +340,37 @@ const ErdCanvasInner = () => {
       });
     });
     return list;
-  }, [fkInfoById, selectedEdgeId]);
+  }, [fkInfoById, selectedEdgeId, tablesById]);
 
-  const [rfNodes, setRfNodes] = useState<TableNodeType[]>(nodes);
-
+  const previousNodeCountRef = useRef(0);
   useEffect(() => {
-    setRfNodes(nodes);
-  }, [nodes]);
+    const instance = reactFlowInstanceRef.current;
+    if (!instance) {
+      return;
+    }
+
+    const count = nodes.length;
+    if (count === 0) {
+      previousNodeCountRef.current = 0;
+      return;
+    }
+
+    const shouldRefit =
+      previousNodeCountRef.current === 0 || previousNodeCountRef.current !== count;
+
+    previousNodeCountRef.current = count;
+
+    if (!shouldRefit) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      instance.fitView({ padding: 0.25, duration: 200 });
+    });
+  }, [nodes.length]);
 
   const onNodesChange = useCallback<OnNodesChange<TableNodeType>>(
     (changes) => {
-      setRfNodes((current) => applyNodeChanges<TableNodeType>(changes, current));
       changes.forEach((change) => {
         if (change.type === 'position' && change.position) {
           setTablePosition(change.id, change.position);
@@ -388,33 +439,38 @@ const ErdCanvasInner = () => {
     [fkInfoById, setSelectedEdgeId, setSelectedTableId, setSelectedColumnId],
   );
 
-    // Keep FK cardinalities in sync with model facts (nullable / unique)
-    useEffect(() => {
-      model.tables.forEach((table) => {
-        table.foreignKeys.forEach((fk) => {
-          const { start, end } = computeKindsForEdgeData(
-            {
-              sourceTableId: table.id,
-              sourceColumnId: fk.fromColumnId,
-              targetTableId: fk.toTableId,
-              targetColumnId: fk.toColumnId,
-            },
-            model,
-          );
+  // Keep FK cardinalities in sync with inferred defaults only when absent and reset
+  useEffect(() => {
+    model.tables.forEach((table) => {
+      table.foreignKeys.forEach((fk) => {
+        if (fk.startCardinality != null && fk.endCardinality != null) {
+          return;
+        }
 
-          const patch: Partial<ForeignKey> = {};
-          if (fk.startCardinality == null) {
-            patch.startCardinality = start;
-          }
-          if (fk.endCardinality == null) {
-            patch.endCardinality = end;
-          }
-          if (Object.keys(patch).length > 0) {
-            updateForeignKey(table.id, fk.id, patch);
-          }
-        });
+        const inferred = computeKindsForEdgeData(
+          {
+            sourceTableId: table.id,
+            sourceColumnId: fk.fromColumnId,
+            targetTableId: fk.toTableId,
+            targetColumnId: fk.toColumnId,
+          },
+          model,
+        );
+
+        const patch: Partial<ForeignKey> = {};
+        if (fk.startCardinality == null) {
+          patch.startCardinality = inferred.start;
+        }
+        if (fk.endCardinality == null) {
+          patch.endCardinality = inferred.end;
+        }
+
+        if (Object.keys(patch).length > 0) {
+          updateForeignKey(table.id, fk.id, patch);
+        }
       });
-    }, [model.tables, model, updateForeignKey]);
+    });
+  }, [model.tables, model, updateForeignKey]);
 
     // Ensure created connections always use FK -> referenced direction.
     const onConnect = useCallback(
@@ -424,7 +480,8 @@ const ErdCanvasInner = () => {
 
         const parseHandle = (h: string) => {
           const parts = String(h).split('-');
-          return parts.slice(1).join('-');
+          const segments = parts.slice(1).filter((segment) => segment !== 'left' && segment !== 'right');
+          return segments.join('-');
         };
 
         const srcHandleCol = parseHandle(sourceHandle);
@@ -1032,7 +1089,7 @@ const ErdCanvasInner = () => {
       }
 
       const canvas = await html2canvas(flowEl, {
-        backgroundColor: '#ffffff',
+        backgroundColor: themeMode === 'dark' ? '#0f172a' : '#ffffff',
         scale: 2,
         useCORS: true,
         logging: false,
@@ -1058,9 +1115,9 @@ const ErdCanvasInner = () => {
   };
 
   return (
-    <div ref={containerRef} className="relative h-full w-full">
+    <div ref={containerRef} className="relative h-full w-full bg-white transition-colors dark:bg-slate-950">
       <ReactFlow
-        nodes={rfNodes}
+        nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         nodeTypes={nodeTypes}
@@ -1084,13 +1141,8 @@ const ErdCanvasInner = () => {
         minZoom={0.3}
         maxZoom={1.5}
       >
-        <Background color="#e2e8f0" gap={24} />
-        <Controls className="bg-white/95" />
-        <MiniMap
-          className="!bg-white/90 !shadow"
-          nodeColor={() => BRAND_COLOR_HEX}
-          nodeStrokeColor={() => BRAND_DARK_HEX}
-        />
+        <Background color={themeMode === 'dark' ? '#334155' : '#e2e8f0'} gap={24} />
+        <Controls className="bg-white/95 !shadow dark:!bg-slate-900/80" />
       </ReactFlow>
       {/* keyboard shortcuts: select all (Ctrl/Cmd+A) and delete */}
       <KeyBindings
@@ -1107,29 +1159,30 @@ const ErdCanvasInner = () => {
             : null
         }
         removeForeignKey={removeForeignKey}
+        undo={undo}
       />
       {selectedEdgeInfo && (
         <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2">
-          <div className="pointer-events-auto flex items-start gap-3 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
+          <div className="pointer-events-auto flex items-start gap-3 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg transition-colors dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Relacionamento
               </p>
-              <p className="font-semibold text-slate-800">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">
                 {selectedEdgeInfo.sourceTableName}.{selectedEdgeInfo.sourceColumnName}
                 {' '}
                 →
                 {' '}
                 {selectedEdgeInfo.targetTableName}.{selectedEdgeInfo.targetColumnName}
               </p>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Cardinalidade: {selectedEdgeInfo.startKind === 'many' ? 'Muitos' : 'Um'} → {selectedEdgeInfo.endKind === 'many' ? 'Muitos' : 'Um'}
               </p>
-              <p className="text-xs text-slate-500">Constraint: {selectedEdgeInfo.constraintName}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Constraint: {selectedEdgeInfo.constraintName}</p>
             </div>
             <button
               type="button"
-              className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+              className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:text-slate-100"
               onClick={() => setSelectedEdgeId(null)}
             >
               <i className="bi bi-x" aria-hidden="true" />
@@ -1141,28 +1194,28 @@ const ErdCanvasInner = () => {
       <div className="absolute right-3 top-3 flex gap-2">
         <button
           type="button"
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-brand-400 dark:hover:bg-slate-800"
           onClick={handleAutoLayout}
           disabled={isLayouting || model.tables.length === 0}
         >
-            {isLayouting ? 'Organizando...' : 'Auto layout'}
+          {isLayouting ? 'Organizando...' : 'Auto layout'}
         </button>
-          <button
-            type="button"
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={() => void exportAsImage('svg')}
-            disabled={model.tables.length === 0}
-          >
-            Exportar SVG
-          </button>
-          <button
-            type="button"
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={() => void exportAsImage('pdf')}
-            disabled={model.tables.length === 0}
-          >
-            Exportar PDF
-          </button>
+        <button
+          type="button"
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-brand-400 dark:hover:bg-slate-800"
+          onClick={() => void exportAsImage('svg')}
+          disabled={model.tables.length === 0}
+        >
+          Exportar SVG
+        </button>
+        <button
+          type="button"
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-brand-400 dark:hover:bg-slate-800"
+          onClick={() => void exportAsImage('pdf')}
+          disabled={model.tables.length === 0}
+        >
+          Exportar PDF
+        </button>
       </div>
     </div>
   );

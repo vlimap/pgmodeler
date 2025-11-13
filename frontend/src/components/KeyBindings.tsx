@@ -10,6 +10,7 @@ type KeyBindingsProps = {
   removeColumn: (tableId: string, columnId: string) => void;
   selectedEdge?: { tableId: string; fkId: string } | null;
   removeForeignKey: (tableId: string, fkId: string) => void;
+  undo: () => void;
 };
 
 export const KeyBindings = ({
@@ -22,6 +23,7 @@ export const KeyBindings = ({
   removeColumn,
   selectedEdge,
   removeForeignKey,
+  undo,
 }: KeyBindingsProps) => {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -40,6 +42,12 @@ export const KeyBindings = ({
       if (mod && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         setSelectedNodeIds([...allNodeIds]);
+        return;
+      }
+
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undo();
         return;
       }
 
@@ -72,6 +80,7 @@ export const KeyBindings = ({
     selectedTableId,
     selectedEdge,
     removeForeignKey,
+    undo,
   ]);
 
   return null;

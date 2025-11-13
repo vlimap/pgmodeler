@@ -1,12 +1,13 @@
 import type { ModelIssue } from '../lib/warnings';
 import { POSTGRES_TYPES } from '../constants/postgresTypes';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { useModelStore } from '../store/modelStore';
 import type { Column } from '../types/model';
 import { computeKindsFromModel, normalizeCardinality } from './CrowFootEdge';
 import { buildConstraintName } from '../lib/naming';
 import { ensureMonacoSetup } from '../lib/monacoSetup';
+import { useThemeStore } from '../store/themeStore';
 
 if (typeof window !== 'undefined') {
   ensureMonacoSetup();
@@ -22,7 +23,13 @@ type PreviewPanelProps = {
   issues: ModelIssue[];
 };
 
-const tabButton = 'inline-flex items-center rounded-md px-3 py-1.5 text-sm font-semibold';
+const tabButton =
+  'inline-flex items-center rounded-md px-3 py-1.5 text-sm font-semibold transition-colors';
+const inputBase =
+  'w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-800 shadow-sm transition-colors focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-brand-300 dark:focus:ring-brand-400/40';
+const selectBase =
+  'w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-800 shadow-sm transition-colors focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
+const labelMuted = 'block text-xs text-slate-500 dark:text-slate-400';
 
 export const PreviewPanel = ({
   activeTab,
@@ -48,6 +55,7 @@ export const PreviewPanel = ({
     (s) => s.convertForeignKeyToManyToMany,
   );
   const setModel = useModelStore((s) => s.setModel);
+  const themeMode = useThemeStore((s) => s.mode);
   const workerRef = useRef<Worker | null>(null);
 
   const [sqlDraft, setSqlDraft] = useState(sql);
@@ -128,31 +136,29 @@ export const PreviewPanel = ({
     return { table, column, fk } as const;
   }, [model.tables, selectedTableId, selectedColumnId]);
 
-  const canConvertToManyToMany = useMemo(() => {
-    if (!selected?.fk) return false;
-    if (selected.column.isPrimaryKey) return false;
-
-    const targetTable = model.tables.find((t) => t.id === selected.fk!.toTableId);
-    if (!targetTable) return false;
-
-    const targetHasColumn = targetTable.columns.some(
-      (col) => col.id === selected.fk!.toColumnId,
-    );
-    if (!targetHasColumn && targetTable.columns.length === 0) {
-      return false;
-    }
-
-    const hasAlternativeSourceColumn = selected.table.columns.some(
-      (col) => col.id !== selected.column.id,
-    );
-
-    return hasAlternativeSourceColumn;
-  }, [selected, model.tables]);
-
   const handleUpdateColumn = (patch: Partial<Column>) => {
     if (!selectedTableId || !selectedColumnId) return;
     updateColumn(selectedTableId, selectedColumnId, patch as any);
   };
+
+  const maybeConvertManyToMany = useCallback(
+    (tableId: string, fkId: string) => {
+      const state = useModelStore.getState();
+      const table = state.model.tables.find((t) => t.id === tableId);
+      if (!table) {
+        return false;
+      }
+      const fk = table.foreignKeys.find((item) => item.id === fkId);
+      if (!fk) {
+        return false;
+      }
+      if (fk.startCardinality !== 'many' || fk.endCardinality !== 'many') {
+        return false;
+      }
+      return convertForeignKeyToManyToMany(tableId, fkId);
+    },
+    [convertForeignKeyToManyToMany],
+  );
 
   const handleCreateFk = (toTableId: string, toColumnId: string) => {
     if (!selectedTableId || !selectedColumnId) return;
@@ -182,13 +188,15 @@ export const PreviewPanel = ({
   };
 
   return (
-    <aside className="flex w-[28rem] flex-col border-l border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+    <aside className="flex w-[28rem] flex-col border-l border-slate-200 bg-white text-slate-800 transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
           <div className="flex gap-2">
             <button
               type="button"
               className={`${tabButton} ${
-                activeTab === 'sql' ? 'bg-brand-50 text-brand-600' : 'text-slate-600'
+                activeTab === 'sql'
+                  ? 'bg-brand-50 text-brand-600 dark:bg-brand-900/40 dark:text-brand-200'
+                  : 'text-slate-600 dark:text-slate-300'
               }`}
               onClick={() => onTabChange('sql')}
               title="Visualizar SQL"
@@ -200,24 +208,24 @@ export const PreviewPanel = ({
       </div>
 
       {selected ? (
-        <div className="flex-1 overflow-auto bg-slate-50 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-700">
+        <div className="flex-1 overflow-auto bg-slate-50 p-4 transition-colors dark:bg-slate-900">
+          <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
             Propriedades da coluna
           </h3>
           <div className="space-y-3">
             <div>
-              <label className="block text-xs text-slate-500">Nome (legível)</label>
+              <label className={labelMuted}>Nome (legível)</label>
               <input
-                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                className={inputBase}
                 value={selected.column.name}
                 onChange={(e) => handleUpdateColumn({ name: e.target.value })}
               />
             </div>
 
             <div>
-              <label className="block text-xs text-slate-500">Nome técnico</label>
+              <label className={labelMuted}>Nome técnico</label>
               <input
-                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                className={inputBase}
                 value={selected.column.name}
                 onChange={(e) => handleUpdateColumn({ name: e.target.value })}
               />
@@ -225,9 +233,9 @@ export const PreviewPanel = ({
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs text-slate-500">Tipo</label>
+                <label className={labelMuted}>Tipo</label>
                 <select
-                  className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                  className={selectBase}
                   value={selected.column.type}
                   onChange={(e) => handleUpdateColumn({ type: e.target.value })}
                 >
@@ -240,16 +248,16 @@ export const PreviewPanel = ({
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-slate-500">Tamanho</label>
+                <label className={labelMuted}>Tamanho</label>
                 <input
-                  className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                  className={inputBase}
                   value={selected.column.defaultValue ?? ''}
                   onChange={(e) => handleUpdateColumn({ defaultValue: e.target.value || undefined })}
                 />
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-3 text-[13px] text-slate-700">
+            <div className="flex flex-wrap gap-3 text-[13px] text-slate-700 dark:text-slate-200">
               <label className="inline-flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -277,23 +285,23 @@ export const PreviewPanel = ({
             </div>
 
             <div>
-              <label className="block text-xs text-slate-500">Comentários</label>
+              <label className={labelMuted}>Comentários</label>
               <textarea
-                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                className={`${inputBase} min-h-[5rem]`}
                 value={selected.column.comment ?? ''}
                 onChange={(e) => handleUpdateColumn({ comment: e.target.value || undefined })}
               />
             </div>
 
             {/* FK section if present */}
-            <div className="pt-2 border-t border-slate-200">
-              <h4 className="mb-2 text-xs font-semibold text-slate-600">Relacionamento</h4>
+            <div className="border-t border-slate-200 pt-2 dark:border-slate-800">
+              <h4 className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">Relacionamento</h4>
               {selected.fk ? (
                 <div className="space-y-2">
                   <div>
-                    <label className="block text-xs text-slate-500">Tabela referenciada</label>
+                    <label className={labelMuted}>Tabela referenciada</label>
                     <select
-                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                      className={selectBase}
                       value={selected.fk.toTableId}
                       onChange={(e) =>
                         updateForeignKey(selected.table.id, selected.fk!.id, { toTableId: e.target.value })
@@ -311,9 +319,9 @@ export const PreviewPanel = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs text-slate-500">Campo referenciado</label>
+                    <label className={labelMuted}>Campo referenciado</label>
                     <select
-                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                      className={selectBase}
                       value={selected.fk.toColumnId}
                       onChange={(e) =>
                         updateForeignKey(selected.table.id, selected.fk!.id, { toColumnId: e.target.value })
@@ -331,11 +339,11 @@ export const PreviewPanel = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs text-slate-500">Cardinalidade (início)</label>
+                    <label className={labelMuted}>Cardinalidade (início)</label>
                   <div className="flex flex-wrap gap-2 pt-2">
                     <button
                       type="button"
-                      className="rounded-md border border-rose-300 bg-white px-3 py-1 text-sm text-rose-600"
+                      className="rounded-md border border-rose-300 bg-white px-3 py-1 text-sm text-rose-600 transition-colors hover:border-rose-400 hover:bg-rose-50 dark:border-rose-700 dark:bg-slate-900 dark:text-rose-300 dark:hover:border-rose-500 dark:hover:bg-rose-950/30"
                       onClick={() => {
                         if (confirm('Remover relacionamento? Esta ação não pode ser desfeita.')) {
                           removeForeignKey(selected.table.id, selected.fk!.id);
@@ -344,34 +352,20 @@ export const PreviewPanel = ({
                     >
                       Remover relacionamento
                     </button>
-                    <button
-                      type="button"
-                      className="rounded-md border border-brand-300 bg-white px-3 py-1 text-sm text-brand-600 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
-                      onClick={() => {
-                        if (!selected?.fk) return;
-                        const ok = convertForeignKeyToManyToMany(
-                          selected.table.id,
-                          selected.fk.id,
-                        );
-                        if (!ok) {
-                          alert(
-                            'Não foi possível converter para relacionamento muitos-para-muitos. Verifique se as tabelas possuem identificadores adequados.',
-                          );
-                        }
-                      }}
-                      disabled={!canConvertToManyToMany}
-                    >
-                      Converter em N:N
-                    </button>
                   </div>
                     <select
-                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                      className={selectBase}
                       value={selected.fk.startCardinality == null ? '' : normalizeCardinality(selected.fk.startCardinality)}
                       onChange={(e) => {
                         const raw = e.target.value as 'one' | 'many' | '';
                         updateForeignKey(selected.table.id, selected.fk!.id, {
                           startCardinality: raw ? normalizeCardinality(raw) : undefined,
                         });
+                        if (raw === 'many') {
+                          setTimeout(() => {
+                            void maybeConvertManyToMany(selected.table.id, selected.fk!.id);
+                          }, 0);
+                        }
                       }}
                     >
                       <option value="">(auto)</option>
@@ -381,15 +375,20 @@ export const PreviewPanel = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs text-slate-500">Cardinalidade (fim)</label>
+                    <label className={labelMuted}>Cardinalidade (fim)</label>
                     <select
-                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                      className={selectBase}
                       value={selected.fk.endCardinality == null ? '' : normalizeCardinality(selected.fk.endCardinality)}
                       onChange={(e) => {
                         const raw = e.target.value as 'one' | 'many' | '';
                         updateForeignKey(selected.table.id, selected.fk!.id, {
                           endCardinality: raw ? normalizeCardinality(raw) : undefined,
                         });
+                        if (raw === 'many') {
+                          setTimeout(() => {
+                            void maybeConvertManyToMany(selected.table.id, selected.fk!.id);
+                          }, 0);
+                        }
                       }}
                     >
                       <option value="">(auto)</option>
@@ -400,9 +399,9 @@ export const PreviewPanel = ({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <p className="text-sm text-slate-500">Nenhum relacionamento encontrado para esta coluna.</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-300">Nenhum relacionamento encontrado para esta coluna.</p>
                   <div className="grid grid-cols-2 gap-2">
-                    <select id="fk-target-table" className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm">
+                    <select id="fk-target-table" className={selectBase}>
                       <option value="">Selecionar tabela</option>
                       {model.tables
                         .filter((t) => t.id !== selected.table.id)
@@ -414,7 +413,7 @@ export const PreviewPanel = ({
                     </select>
                     <button
                       type="button"
-                      className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm"
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm transition-colors hover:border-brand-200 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:border-brand-500 dark:hover:bg-brand-900/30"
                       onClick={() => {
                         const sel = (document.getElementById('fk-target-table') as HTMLSelectElement).value;
                         if (sel) {
@@ -434,14 +433,14 @@ export const PreviewPanel = ({
           </div>
         </div>
       ) : (
-        <div className="flex h-full flex-1 flex-col gap-4 bg-slate-50 px-5 py-5">
-          <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex-1 bg-slate-50/60 p-4">
-              <div className="h-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-inner">
+        <div className="flex h-full flex-1 flex-col gap-4 bg-slate-50 px-5 py-5 dark:bg-slate-900">
+          <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex-1 bg-slate-50/60 p-4 dark:bg-slate-900">
+              <div className="h-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-inner dark:border-slate-700 dark:bg-slate-950">
                 <Editor
                   height="100%"
                   language="sql"
-                  theme="vs-light"
+                  theme={themeMode === 'dark' ? 'vs-dark' : 'vs-light'}
                   value={sqlDraft}
                   onChange={(value) => {
                     setSqlDraft(value ?? '');
@@ -457,12 +456,12 @@ export const PreviewPanel = ({
                 />
               </div>
             </div>
-            <div className="border-t border-slate-200 bg-white/90 px-5 py-4 text-sm text-slate-600">
+            <div className="border-t border-slate-200 bg-white/90 px-5 py-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={handleApplySql}
                     disabled={!sqlDirty || sqlBusy}
                   >
@@ -470,7 +469,7 @@ export const PreviewPanel = ({
                   </button>
                   <button
                     type="button"
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-brand-200 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-brand-200 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:border-brand-400 dark:hover:text-brand-200"
                     onClick={handleResetSql}
                     disabled={!sqlDirty}
                   >
@@ -478,13 +477,13 @@ export const PreviewPanel = ({
                   </button>
                 </div>
                 {sqlDirty && !sqlError && !sqlBusy && (
-                  <span className="text-xs font-medium text-slate-500">
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-300">
                     SQL editado (ainda não aplicado)
                   </span>
                 )}
               </div>
               {sqlError && (
-                <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">
+                <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
                   {sqlError}
                 </div>
               )}
@@ -493,19 +492,19 @@ export const PreviewPanel = ({
         </div>
       )}
 
-      <div className="border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+      <div className="border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
         {errorIssues.length === 0 && warningIssues.length === 0 && !sqlError && (
           <p className="flex items-center gap-2">
-            <i className="bi bi-check-circle-fill text-emerald-500" aria-hidden="true" />
+            <i className="bi bi-check-circle-fill text-emerald-500 dark:text-emerald-400" aria-hidden="true" />
             Sem inconsistências detectadas.
           </p>
         )}
         {errorIssues.length > 0 && (
           <div className="mb-2">
-            <p className="font-semibold text-rose-600">
+            <p className="font-semibold text-rose-600 dark:text-rose-400">
               {errorIssues.length} {errorIssues.length === 1 ? 'erro' : 'erros'}
             </p>
-            <ul className="mt-1 list-disc space-y-1 pl-4 text-rose-600">
+            <ul className="mt-1 list-disc space-y-1 pl-4 text-rose-600 dark:text-rose-400">
               {errorIssues.map((issue, index) => (
                 <li key={`error-${index}`}>{issue.message}</li>
               ))}
@@ -514,11 +513,11 @@ export const PreviewPanel = ({
         )}
         {warningIssues.length > 0 && (
           <div>
-            <p className="font-semibold text-amber-600">
+            <p className="font-semibold text-amber-600 dark:text-amber-400">
               {warningIssues.length}{' '}
               {warningIssues.length === 1 ? 'aviso' : 'avisos'}
             </p>
-            <ul className="mt-1 list-disc space-y-1 pl-4 text-amber-600">
+            <ul className="mt-1 list-disc space-y-1 pl-4 text-amber-600 dark:text-amber-400">
               {warningIssues.map((issue, index) => (
                 <li key={`warning-${index}`}>{issue.message}</li>
               ))}

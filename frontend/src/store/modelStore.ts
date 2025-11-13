@@ -17,6 +17,14 @@ import {
 } from '../lib/naming';
 
 const GENERIC_PK_NAME = 'id';
+const MAX_UNDO_STACK = 20;
+
+const cloneModel = (model: DbModel): DbModel => {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(model) as DbModel;
+  }
+  return JSON.parse(JSON.stringify(model)) as DbModel;
+};
 
 const createId = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -140,18 +148,21 @@ const sanitizeModel = (model: DbModel): DbModel => ({
       const base = sanitizeConstraintName(fk.name, fallback);
       const unique = ensureUniqueConstraintName(base, used);
       used.add(unique);
-      const startCardinality = normalizeFkCardinality(fk.startCardinality);
-      const endCardinality = normalizeFkCardinality(fk.endCardinality);
       return {
         ...fk,
         name: unique,
-        startCardinality,
-        endCardinality,
       };
     });
     return { ...table, foreignKeys };
   }),
 });
+
+type ModelSnapshot = {
+  model: DbModel;
+  selectedSchemaId: string | null;
+  selectedTableId: string | null;
+  selectedColumnId: string | null;
+};
 
 type ModelState = {
   model: DbModel;
@@ -159,6 +170,7 @@ type ModelState = {
   selectedTableId: string | null;
   selectedColumnId: string | null;
   showErd: boolean;
+  undoStack: ModelSnapshot[];
   setModel: (model: DbModel) => void;
   reset: () => void;
   addSchema: (name: string) => string;
@@ -191,6 +203,7 @@ type ModelState = {
   setSelectedTableId: (tableId: string | null) => void;
   setSelectedColumnId: (columnId: string | null) => void;
   toggleErd: () => void;
+  undo: () => void;
 };
 
 const storage =
@@ -212,6 +225,7 @@ export const useModelStore = create<ModelState>()(
       selectedTableId: null,
       selectedColumnId: null,
       showErd: true,
+      undoStack: [],
 
       setModel: (model) => {
         const sanitized = sanitizeModel({ ...model, version: 1 });
@@ -220,6 +234,7 @@ export const useModelStore = create<ModelState>()(
           selectedSchemaId: sanitized.schemas[0]?.id ?? null,
           selectedTableId: sanitized.tables[0]?.id ?? null,
           selectedColumnId: null,
+          undoStack: [],
         });
       },
 
@@ -230,6 +245,7 @@ export const useModelStore = create<ModelState>()(
           selectedSchemaId: freshModel.schemas[0]?.id ?? null,
           selectedTableId: null,
           selectedColumnId: null,
+          undoStack: [],
         });
       },
 
@@ -356,6 +372,13 @@ export const useModelStore = create<ModelState>()(
       },
 
       removeTable: (id) => {
+        const snapshot: ModelSnapshot = {
+          model: cloneModel(get().model),
+          selectedSchemaId: get().selectedSchemaId,
+          selectedTableId: get().selectedTableId,
+          selectedColumnId: get().selectedColumnId,
+        };
+
         set((state) => {
           const tables = state.model.tables.filter((table) => table.id !== id);
           const sanitizedTables = tables.map((table) => ({
@@ -390,6 +413,7 @@ export const useModelStore = create<ModelState>()(
             },
             selectedTableId,
             selectedColumnId,
+            undoStack: [snapshot, ...state.undoStack].slice(0, MAX_UNDO_STACK),
           };
         });
       },
@@ -445,6 +469,13 @@ export const useModelStore = create<ModelState>()(
       },
 
       removeColumn: (tableId, columnId) => {
+        const snapshot: ModelSnapshot = {
+          model: cloneModel(get().model),
+          selectedSchemaId: get().selectedSchemaId,
+          selectedTableId: get().selectedTableId,
+          selectedColumnId: get().selectedColumnId,
+        };
+
         set((state) => {
           let nextSelectedColumnId = state.selectedColumnId;
 
@@ -490,6 +521,7 @@ export const useModelStore = create<ModelState>()(
               tables: updatedTables,
             },
             selectedColumnId: nextSelectedColumnId,
+            undoStack: [snapshot, ...state.undoStack].slice(0, MAX_UNDO_STACK),
           };
         });
       },
@@ -546,13 +578,15 @@ export const useModelStore = create<ModelState>()(
             const currentNames = table.foreignKeys.map((item) => item.name);
             const base = sanitizeConstraintName(fk.name, fallback);
             const uniqueName = ensureUniqueConstraintName(base, currentNames);
-        const fkWithId: ForeignKey = {
-          ...fk,
-          id: fkId,
-          name: uniqueName,
-          startCardinality: normalizeFkCardinality(fk.startCardinality),
-          endCardinality: normalizeFkCardinality(fk.endCardinality),
-        };
+            const normalizedStart = normalizeFkCardinality(fk.startCardinality);
+            const normalizedEnd = normalizeFkCardinality(fk.endCardinality);
+            const fkWithId: ForeignKey = {
+              ...fk,
+              id: fkId,
+              name: uniqueName,
+              startCardinality: normalizedStart ?? fk.startCardinality,
+              endCardinality: normalizedEnd ?? fk.endCardinality,
+            };
             return {
               ...table,
               foreignKeys: [...table.foreignKeys, fkWithId],
@@ -591,10 +625,10 @@ export const useModelStore = create<ModelState>()(
                   updated.name = ensureUniqueConstraintName(base, existingNames);
                 }
                 if (patch.startCardinality !== undefined) {
-                  updated.startCardinality = normalizeFkCardinality(patch.startCardinality);
+                  updated.startCardinality = normalizeFkCardinality(patch.startCardinality) ?? patch.startCardinality;
                 }
                 if (patch.endCardinality !== undefined) {
-                  updated.endCardinality = normalizeFkCardinality(patch.endCardinality);
+                  updated.endCardinality = normalizeFkCardinality(patch.endCardinality) ?? patch.endCardinality;
                 }
 
                 return { ...fk, ...updated };
@@ -651,10 +685,6 @@ export const useModelStore = create<ModelState>()(
             return state;
           }
 
-          if (sourceColumn.isPrimaryKey) {
-            return state;
-          }
-
           const targetTable = state.model.tables[targetTableIndex];
           const targetColumn = targetTable.columns.find(
             (column) => column.id === fk.toColumnId,
@@ -664,8 +694,17 @@ export const useModelStore = create<ModelState>()(
             return state;
           }
 
-          const excluded = new Set<string>([sourceColumn.id]);
-          const sourceReference = pickReferenceColumn(table, undefined, excluded);
+          const shouldRemoveSourceColumn = !sourceColumn.isPrimaryKey;
+
+          const excluded = new Set<string>();
+          if (shouldRemoveSourceColumn) {
+            excluded.add(sourceColumn.id);
+          }
+          const sourceReference = pickReferenceColumn(
+            table,
+            sourceColumn.id,
+            excluded,
+          );
           const targetReference = pickReferenceColumn(
             targetTable,
             targetColumn.id,
@@ -683,11 +722,10 @@ export const useModelStore = create<ModelState>()(
           const orderedNames = [table.name, targetTable.name].sort((a, b) =>
             a.localeCompare(b),
           );
-          const baseNameRaw = `${orderedNames.join('_')}_link`;
-          const baseNameSanitized =
-            toSnakeCase(baseNameRaw) ||
-            `${toSnakeCase(table.name)}_${toSnakeCase(targetTable.name)}_link`;
-          const baseName = baseNameSanitized || 'relacionamento_link';
+          const baseNameRaw = `${orderedNames.join('_')}`;
+          const fallbackName = `${toSnakeCase(table.name)}_${toSnakeCase(targetTable.name)}`;
+          const baseNameSanitized = toSnakeCase(baseNameRaw) || fallbackName;
+          const baseName = baseNameSanitized || 'relacionamento';
           const joinTableName = ensureUniqueName(
             baseName,
             schemaTables.map((item) => item.name),
@@ -698,7 +736,7 @@ export const useModelStore = create<ModelState>()(
           const leftColumn: Column = {
             id: createId(),
             name: buildJoinColumnName(
-              table.name,
+              `fk_${table.name}`,
               sourceReference.name,
               joinColumnNames,
             ),
@@ -712,7 +750,7 @@ export const useModelStore = create<ModelState>()(
           const rightColumn: Column = {
             id: createId(),
             name: buildJoinColumnName(
-              targetTable.name,
+              `fk_${targetTable.name}`,
               targetReference.name,
               joinColumnNames,
             ),
@@ -763,17 +801,39 @@ export const useModelStore = create<ModelState>()(
             endCardinality: 'one',
           };
 
-          const positions = [table.position, targetTable.position].filter(
-            (pos): pos is TablePosition => !!pos,
-          );
+          const layoutSpacing = 320;
+          let sourcePosition = table.position ?? null;
+          let targetPosition = targetTable.position ?? null;
+          let joinPosition: TablePosition;
 
-          let joinPosition: TablePosition | undefined;
-          if (positions.length > 0) {
-            const avgX =
-              positions.reduce((acc, pos) => acc + pos.x, 0) / positions.length;
-            const avgY =
-              positions.reduce((acc, pos) => acc + pos.y, 0) / positions.length;
-            joinPosition = { x: avgX + 40, y: avgY + 40 };
+          const laneY = sourcePosition?.y ?? targetPosition?.y ?? 0;
+
+          if (sourcePosition && targetPosition) {
+            const distance = Math.abs(targetPosition.x - sourcePosition.x);
+            const centerX = (sourcePosition.x + targetPosition.x) / 2;
+            if (distance < layoutSpacing * 2) {
+              sourcePosition = { x: centerX - layoutSpacing, y: laneY };
+              targetPosition = { x: centerX + layoutSpacing, y: laneY };
+            } else {
+              sourcePosition = { x: sourcePosition.x, y: laneY };
+              targetPosition = { x: targetPosition.x, y: laneY };
+            }
+            joinPosition = {
+              x: (sourcePosition.x + targetPosition.x) / 2,
+              y: laneY,
+            };
+          } else if (sourcePosition) {
+            sourcePosition = { x: sourcePosition.x, y: laneY };
+            joinPosition = { x: sourcePosition.x + layoutSpacing, y: laneY };
+            targetPosition = { x: joinPosition.x + layoutSpacing, y: laneY };
+          } else if (targetPosition) {
+            targetPosition = { x: targetPosition.x, y: laneY };
+            joinPosition = { x: targetPosition.x - layoutSpacing, y: laneY };
+            sourcePosition = { x: joinPosition.x - layoutSpacing, y: laneY };
+          } else {
+            sourcePosition = { x: -layoutSpacing, y: laneY };
+            joinPosition = { x: 0, y: laneY };
+            targetPosition = { x: layoutSpacing, y: laneY };
           }
 
           const sourceColumnId = sourceColumn.id;
@@ -782,20 +842,42 @@ export const useModelStore = create<ModelState>()(
             if (index === tableIndex) {
               return {
                 ...candidate,
-                columns: candidate.columns.filter(
-                  (column) => column.id !== sourceColumnId,
-                ),
+                columns: shouldRemoveSourceColumn
+                  ? candidate.columns.filter(
+                      (column) => column.id !== sourceColumnId,
+                    )
+                  : candidate.columns,
                 foreignKeys: candidate.foreignKeys.filter(
-                  (item) => item.id !== fk.id && item.fromColumnId !== sourceColumnId,
+                  (item) =>
+                    item.id !== fk.id &&
+                    (shouldRemoveSourceColumn
+                      ? item.fromColumnId !== sourceColumnId
+                      : true),
                 ),
+                position: sourcePosition ?? undefined,
+              };
+            }
+
+            if (index === targetTableIndex) {
+              return {
+                ...candidate,
+                foreignKeys: candidate.foreignKeys.filter(
+                  (item) =>
+                    shouldRemoveSourceColumn
+                      ? item.toColumnId !== sourceColumnId
+                      : true,
+                ),
+                position: targetPosition ?? undefined,
               };
             }
 
             return {
               ...candidate,
-              foreignKeys: candidate.foreignKeys.filter(
-                (item) => item.toColumnId !== sourceColumnId,
-              ),
+              foreignKeys: shouldRemoveSourceColumn
+                ? candidate.foreignKeys.filter(
+                    (item) => item.toColumnId !== sourceColumnId,
+                  )
+                : candidate.foreignKeys,
             };
           });
 
@@ -910,6 +992,23 @@ export const useModelStore = create<ModelState>()(
 
       toggleErd: () => {
         set((state) => ({ showErd: !state.showErd }));
+      },
+
+      undo: () => {
+        set((state) => {
+          const [snapshot, ...rest] = state.undoStack;
+          if (!snapshot) {
+            return state;
+          }
+
+          return {
+            model: cloneModel(snapshot.model),
+            selectedSchemaId: snapshot.selectedSchemaId,
+            selectedTableId: snapshot.selectedTableId,
+            selectedColumnId: snapshot.selectedColumnId,
+            undoStack: rest,
+          };
+        });
       },
     }),
     {

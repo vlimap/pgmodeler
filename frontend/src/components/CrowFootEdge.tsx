@@ -268,7 +268,16 @@ export function computeKindsForEdgeData(
   }
 
   const fkNullable = !!sourceCol.nullable;
-  const fkIsUnique = !!(sourceCol.isPrimaryKey || sourceCol.isUnique);
-  const refIsUnique = !!(targetCol.isPrimaryKey || targetCol.isUnique);
+  const sourcePkColumns = sourceTable.columns.filter((c) => c.isPrimaryKey);
+  const fkIsUnique = !!(
+    sourceCol.isUnique ||
+    (sourceCol.isPrimaryKey && sourcePkColumns.length === 1)
+  );
+
+  const refPkColumns = targetTable.columns.filter((c) => c.isPrimaryKey);
+  const refIsUnique = !!(
+    targetCol.isUnique ||
+    (targetCol.isPrimaryKey && refPkColumns.length === 1)
+  );
   return computeKindsFromModel({ fkNullable, fkIsUnique, refIsUnique });
 }

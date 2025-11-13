@@ -5,19 +5,19 @@ import { createEnumType, useModelStore } from '../store/modelStore';
 type SidebarTab = 'tables' | 'types';
 
 const controlButton =
-  'inline-flex h-6 w-6 items-center justify-center rounded border border-transparent text-slate-500 transition hover:border-slate-300 hover:bg-slate-200 hover:text-slate-700';
+  'inline-flex h-6 w-6 items-center justify-center rounded border border-transparent text-slate-500 transition hover:border-slate-300 hover:bg-slate-200 hover:text-slate-700 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-100';
 
 const segmentedButton =
-  'inline-flex flex-1 items-center justify-center rounded-md px-3 py-1.5 text-sm font-semibold';
+  'inline-flex flex-1 items-center justify-center rounded-md px-3 py-1.5 text-sm font-semibold transition-colors';
 
 const smallButton =
-  'inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60';
+  'inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:border-slate-500 dark:hover:bg-slate-800';
 
 const formInput =
-  'w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-800 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-200';
+  'w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-800 shadow-sm transition-colors focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-200 dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-100 dark:focus:border-brand-400 dark:focus:ring-brand-300/60';
 
 const formSelect =
-  'w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-800 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-200';
+  'w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-800 shadow-sm transition-colors focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-200 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100';
 
 /** Sidebar (aside) – lista schemas, tabelas e tipos; ações rápidas */
 export const Sidebar = () => {
@@ -148,13 +148,15 @@ export const Sidebar = () => {
 
   return (
     // adicionar `min-h-0` para permitir que o filho com `overflow-y-auto` role corretamente em containers flex
-    <aside className="flex h-full w-80 min-h-0 flex-shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-slate-50">
+    <aside className="flex h-full w-80 min-h-0 flex-shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white text-slate-800 transition-colors dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
       {/* Tabs (Tabelas / Tipos) */}
       <div className="flex gap-2 p-3">
         <button
           type="button"
           className={`${segmentedButton} ${
-            activeTab === 'tables' ? 'bg-white text-brand-600 shadow' : 'bg-slate-100 text-slate-600'
+            activeTab === 'tables'
+              ? 'bg-white text-brand-600 shadow dark:bg-slate-800 dark:text-brand-200'
+              : 'bg-slate-100 text-slate-600 dark:bg-slate-900/70 dark:text-slate-300'
           }`}
           onClick={() => setActiveTab('tables')}
           title="Gerenciar tabelas"
@@ -165,7 +167,9 @@ export const Sidebar = () => {
         <button
           type="button"
           className={`${segmentedButton} ${
-            activeTab === 'types' ? 'bg-white text-brand-600 shadow' : 'bg-slate-100 text-slate-600'
+            activeTab === 'types'
+              ? 'bg-white text-brand-600 shadow dark:bg-slate-800 dark:text-brand-200'
+              : 'bg-slate-100 text-slate-600 dark:bg-slate-900/70 dark:text-slate-300'
           }`}
           onClick={() => setActiveTab('types')}
           title="Gerenciar tipos"
@@ -177,12 +181,12 @@ export const Sidebar = () => {
 
       {/* Passos rápidos (tour/onboarding leve) */}
       <div className="px-4 pb-3">
-        <div className="rounded-md border border-brand-100 bg-brand-50/60 p-3 text-sm text-slate-800">
+          <div className="rounded-md border border-brand-100 bg-brand-50/60 p-3 text-sm text-slate-800 dark:border-brand-900/40 dark:bg-slate-900/70 dark:text-slate-100">
           <div className="flex items-start gap-3">
-            <i className="bi bi-info-circle-fill text-brand-600 mt-1" aria-hidden="true" />
+            <i className="bi bi-info-circle-fill text-brand-600 mt-1 dark:text-brand-300" aria-hidden="true" />
             <div>
-              <p className="font-semibold text-brand-700">Passos rápidos</p>
-              <ol className="mt-2 ml-4 list-decimal space-y-1 text-xs text-slate-700">
+              <p className="font-semibold text-brand-700 dark:text-brand-300">Passos rápidos</p>
+              <ol className="mt-2 ml-4 list-decimal space-y-1 text-xs text-slate-700 dark:text-slate-300">
                 <li>
                   <strong>Escolha ou crie um schema</strong> — é o escopo onde suas tabelas ficam.
                 </li>
@@ -263,13 +267,15 @@ export const Sidebar = () => {
                   <div
                     key={schema.id}
                     className={`rounded-md border ${
-                      schema.id === selectedSchemaId ? 'border-brand-400 bg-white shadow-sm' : 'border-transparent bg-slate-100'
+                      schema.id === selectedSchemaId
+                        ? 'border-brand-400 bg-white shadow-sm dark:border-brand-400 dark:bg-slate-900'
+                        : 'border-transparent bg-slate-100 dark:bg-slate-900/60'
                     } p-2`}
                   >
                     <div className="flex items-center justify-between">
                       <button
                         type="button"
-                        className="text-sm font-semibold text-slate-700"
+                        className="text-sm font-semibold text-slate-700 dark:text-slate-100"
                         onClick={() => handleSchemaChange(schema.id)}
                       >
                         {schema.name}
@@ -329,7 +335,7 @@ export const Sidebar = () => {
                         }
                       }}
                     />
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       Nome do schema (ex: <code>public</code>). Escolha onde suas tabelas serão criadas.
                     </p>
                   </div>
@@ -401,8 +407,8 @@ export const Sidebar = () => {
 
                 <div className="space-y-2">
                   {tablesInSchema.length === 0 && (
-                    <div className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600">
-                      <p className="font-semibold text-slate-700">Nenhuma tabela ainda</p>
+                    <div className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                      <p className="font-semibold text-slate-700 dark:text-slate-100">Nenhuma tabela ainda</p>
                       <p className="mt-1 text-xs">
                         Clique no botão <strong>+</strong> acima para criar sua primeira tabela. Após criar, selecione-a para editar colunas e
                         relacionamentos.
@@ -413,14 +419,16 @@ export const Sidebar = () => {
                   {tablesInSchema.map((table: any, idx: number) => (
                     <div key={table.id} className="space-y-1" data-tour={idx === 0 ? 'first-table' : undefined}>
                       <div
-                        className={`w-full rounded-md px-3 py-2 text-sm font-medium transition flex items-center justify-between ${
-                          table.id === selectedTableId ? 'bg-white text-brand-600 shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition ${
+                          table.id === selectedTableId
+                            ? 'bg-white text-brand-600 shadow-sm dark:bg-slate-900 dark:text-brand-200 dark:shadow-[0_0_0_1px_rgba(148,163,184,0.35)]'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800/80'
                         }`}
                       >
                         <div className="flex-1">
                           {editingTableId === table.id ? (
                             <div className="flex items-center gap-2">
-                              <i className="bi bi-table text-slate-400" aria-hidden="true" />
+                              <i className="bi bi-table text-slate-400 dark:text-slate-500" aria-hidden="true" />
                               <input
                                 data-editing-table={table.id}
                                 className={`${formInput} w-full max-w-[180px]`}
@@ -478,7 +486,7 @@ export const Sidebar = () => {
                                 setTimeout(tryFocus, 200);
                               }}
                             >
-                              <i className="bi bi-table mr-2" aria-hidden="true" />
+                              <i className="bi bi-table mr-2 text-slate-400 dark:text-slate-500" aria-hidden="true" />
                               {table.name || 'sem_nome'}
                             </button>
                           )}
@@ -502,12 +510,14 @@ export const Sidebar = () => {
                       </div>
 
                       {/* Lista de colunas (sem overflow interno) */}
-                      <div className="pl-8 mt-1 w-full space-y-1">
+                      <div className="mt-1 w-full space-y-1 pl-8">
                         {(table.columns ?? []).map((column: any, cidx: number) => (
                           <div
                             key={column.id}
                             className={`flex items-center justify-between rounded-md px-3 py-2 text-sm ${
-                              column.id === selectedColumnId ? 'bg-white text-brand-600' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                              column.id === selectedColumnId
+                                ? 'bg-white text-brand-600 dark:bg-slate-900 dark:text-brand-200'
+                                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800/80'
                             }`}
                           >
                             <button
@@ -520,7 +530,7 @@ export const Sidebar = () => {
                                 setSelectedColumnId(column.id);
                               }}
                             >
-                              <i className="bi bi-list-ul text-slate-400" aria-hidden="true" />
+                              <i className="bi bi-list-ul text-slate-400 dark:text-slate-500" aria-hidden="true" />
                               <span className="truncate">{column.name || 'sem_nome'}</span>
                             </button>
                             <button
@@ -558,14 +568,17 @@ export const Sidebar = () => {
             </div>
 
             {(model?.types?.length ?? 0) === 0 && (
-              <p className="text-sm text-slate-500">Nenhum tipo cadastrado. Adicione tipos ENUM para reutilizar em colunas.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Nenhum tipo cadastrado. Adicione tipos ENUM para reutilizar em colunas.</p>
             )}
 
             <div className="space-y-3">
               {(model?.types ?? []).map((customType: any) => (
-                <div key={customType.id} className="rounded border border-slate-200 bg-white p-4 shadow-sm">
+                <div
+                  key={customType.id}
+                  className="rounded border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/60"
+                >
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-slate-700">{customType.name}</h3>
+                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-100">{customType.name}</h3>
                     <button type="button" className={smallButton} onClick={() => removeType(customType.id)}>
                       Remover
                     </button>
@@ -573,7 +586,7 @@ export const Sidebar = () => {
 
                   <div className="mt-3 space-y-3 text-sm">
                     <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Nome</label>
                       <input
                         className={formInput}
                         value={customType.name}
@@ -582,7 +595,7 @@ export const Sidebar = () => {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Schema</label>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Schema</label>
                       <select
                         className={formSelect}
                         value={customType.schemaId}
@@ -597,7 +610,7 @@ export const Sidebar = () => {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Valores (um por linha)
                       </label>
                       <textarea

@@ -16,10 +16,12 @@ type HeaderProps = {
   onOpenLogin?: () => void;
   onOpenProjects?: () => void;
   onOpenAccount?: () => void;
+  themeMode: 'light' | 'dark';
+  onToggleTheme: () => void;
 };
 
 const buttonBase =
-  'inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-60';
+  'inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-700';
 
 const badgeBase =
   'inline-flex items-center rounded-full px-2 text-xs font-semibold';
@@ -41,6 +43,8 @@ export const Header = ({
   onOpenLogin,
   onOpenProjects,
   onOpenAccount,
+  themeMode,
+  onToggleTheme,
 }: HeaderProps) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -67,10 +71,10 @@ export const Header = ({
   const hasStatusBadges = errorCount > 0 || warningCount > 0;
 
   return (
-    <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
+    <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-center gap-3">
         <img src="/logo.png" alt="PG Modeler" className="h-8 w-8 rounded" />
-        <span className="text-xl font-semibold text-slate-800">PG Modeler</span>
+        <span className="text-xl font-semibold text-slate-800 dark:text-slate-100">PG Modeler</span>
         <div className="flex items-center gap-2">
           <button type="button" className={buttonBase} onClick={onNew} title="Novo projeto">
             <i className="bi bi-plus-lg" aria-hidden="true" />
@@ -146,6 +150,16 @@ export const Header = ({
         </div>
       </div>
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onToggleTheme}
+          className={buttonBase}
+          title={themeMode === 'dark' ? 'Alternar para modo claro' : 'Alternar para modo escuro'}
+        >
+          <i className={`bi ${themeMode === 'dark' ? 'bi-brightness-high' : 'bi-moon-stars'}`} aria-hidden="true" />
+          {themeMode === 'dark' ? 'Modo claro' : 'Modo escuro'}
+        </button>
+
         <a
           href={GITHUB_REPO_URL}
           target="_blank"
@@ -168,15 +182,15 @@ export const Header = ({
           Doe um café
         </a>
         {hasStatusBadges && (
-          <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
             {errorCount > 0 && (
-              <span className={`${badgeBase} bg-rose-100 text-rose-600`}>
+              <span className={`${badgeBase} bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300`}>
                 <i className="bi bi-exclamation-circle-fill mr-1" aria-hidden="true" />
                 {errorCount} {errorCount === 1 ? 'erro' : 'erros'}
               </span>
             )}
             {warningCount > 0 && (
-              <span className={`${badgeBase} bg-amber-100 text-amber-600`}>
+              <span className={`${badgeBase} bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300`}>
                 <i className="bi bi-exclamation-triangle-fill mr-1" aria-hidden="true" />
                 {warningCount} {warningCount === 1 ? 'aviso' : 'avisos'}
               </span>
