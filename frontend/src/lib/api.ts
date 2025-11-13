@@ -88,4 +88,10 @@ export const api = {
       body: JSON.stringify({ marketingOptIn }),
     });
   },
+  async submitFeedback(payload: { rating: number; comment?: string | null; usageCount?: number }): Promise<void> {
+    await request('/api/feedback', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 };

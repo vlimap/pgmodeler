@@ -18,8 +18,12 @@ import { api, type ApiProject, type ApiUser } from './lib/api';
 import { MarketingConsentModal } from './components/MarketingConsentModal';
 import { DesktopOnlyNotice } from './components/DesktopOnlyNotice';
 import { useThemeStore } from './store/themeStore';
+import { FeedbackModal } from './components/FeedbackModal';
 
 type PreviewTab = 'json' | 'sql';
+
+const FEEDBACK_USAGE_KEY = 'pg:feedback-usage-count';
+const FEEDBACK_COMPLETED_KEY = 'pg:feedback-submitted';
 
 const createDownload = (content: string, filename: string) => {
   const blob = new Blob([content], { type: 'application/json' });
@@ -57,6 +61,8 @@ export const App = () => {
   const [showProjects, setShowProjects] = useState(false);
   const [showConsent, setShowConsent] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackUsageCount, setFeedbackUsageCount] = useState(0);
   const themeMode = useThemeStore((state) => state.mode);
   const toggleTheme = useThemeStore((state) => state.toggle);
   useEffect(() => {
@@ -281,6 +287,23 @@ export const App = () => {
     }
   };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(FEEDBACK_USAGE_KEY);
+      const current = stored ? Number.parseInt(stored, 10) : 0;
+      const nextCount = Number.isFinite(current) && current >= 0 ? current + 1 : 1;
+      window.localStorage.setItem(FEEDBACK_USAGE_KEY, String(nextCount));
+      setFeedbackUsageCount(nextCount);
+      const alreadySubmitted = window.localStorage.getItem(FEEDBACK_COMPLETED_KEY) === '1';
+      if (!alreadySubmitted && nextCount >= 20) {
+        setShowFeedback(true);
+      }
+    } catch (error) {
+      console.error('Falha ao registrar contador de uso do feedback', error);
+    }
+  }, []);
+
   const joyrideStyles = useMemo(
     () => ({
       options: {
@@ -327,6 +350,24 @@ export const App = () => {
     return () => mediaQuery.removeEventListener('change', update);
   }, []);
 
+  const handleSubmitFeedback = useCallback(
+    async ({ rating, comment }: { rating: number; comment: string }) => {
+      try {
+        await api.submitFeedback({
+          rating,
+          comment: comment.length > 0 ? comment : undefined,
+          usageCount: feedbackUsageCount,
+        });
+        window.localStorage.setItem(FEEDBACK_COMPLETED_KEY, '1');
+        setShowFeedback(false);
+      } catch (error) {
+        console.error('Falha ao enviar feedback', error);
+        throw error instanceof Error ? error : new Error('Não foi possível registrar o feedback.');
+      }
+    },
+    [feedbackUsageCount],
+  );
+
   if (isMobile !== false) {
     return (
       <div className={themeMode === 'dark' ? 'dark h-full bg-white dark:bg-slate-950' : 'h-full bg-white'}>
@@ -370,7 +411,6 @@ export const App = () => {
       localStorage.setItem('hasSeenTour', '1');
     }
   };
-
   return (
     <div className={themeMode === 'dark' ? 'dark h-full bg-white dark:bg-slate-950' : 'h-full bg-white'}>
       <div className="flex h-full flex-col bg-white text-slate-900 transition-colors duration-200 ease-out dark:bg-slate-950 dark:text-slate-100">
@@ -463,6 +503,7 @@ export const App = () => {
           onAccept={() => handleMarketingConsent(true)}
           onDecline={() => handleMarketingConsent(false)}
         />
+        <FeedbackModal open={showFeedback} onSubmit={handleSubmitFeedback} />
       </div>
     </div>
   );

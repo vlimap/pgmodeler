@@ -1,6 +1,6 @@
 const request = require('supertest');
 const { createApp, sequelize } = require('../src/app');
-const { User } = require('../src/models');
+const { User, Feedback } = require('../src/models');
 
 describe('API integration', () => {
   let app;
@@ -93,5 +93,48 @@ describe('API integration', () => {
       marketingOptIn: true,
     });
     expect(new Date(res.body.marketingConsentAt).getTime()).toBeGreaterThan(0);
+  });
+
+  test('POST /api/feedback registra feedback anônimo', async () => {
+    const res = await request(app)
+      .post('/api/feedback')
+      .send({ rating: 5, comment: 'Excelente ferramenta!', usageCount: 22 })
+      .expect(201);
+
+    expect(res.body).toMatchObject({
+      rating: 5,
+      comment: 'Excelente ferramenta!',
+      usageCount: 22,
+    });
+
+    const stored = await Feedback.findByPk(res.body.id);
+    expect(stored).not.toBeNull();
+    expect(stored.rating).toBe(5);
+    expect(stored.comment).toBe('Excelente ferramenta!');
+    expect(stored.usageCount).toBe(22);
+    expect(stored.userId).toBeNull();
+  });
+
+  test('POST /api/feedback associa usuário autenticado', async () => {
+    const { agent, user } = await loginAgent();
+
+    const res = await agent
+      .post('/api/feedback')
+      .send({ rating: 3, comment: 'Gostei, mas pode melhorar.' })
+      .expect(201);
+
+    expect(res.body.rating).toBe(3);
+
+    const stored = await Feedback.findByPk(res.body.id);
+    expect(stored.userId).toBe(user.id);
+  });
+
+  test('POST /api/feedback valida payload inválido', async () => {
+    const res = await request(app)
+      .post('/api/feedback')
+      .send({ rating: 10 })
+      .expect(400);
+
+    expect(res.body).toHaveProperty('error');
   });
 });

@@ -1,4 +1,5 @@
 import type { Column, DbModel, ForeignKey, Table } from '../types/model';
+import { ensureUniqueConstraintName, toSnakeCase } from './naming';
 
 const quoteIdent = (value: string): string =>
   `"${value.replaceAll('"', '""')}"`;
@@ -109,6 +110,22 @@ const buildTableStatement = (
   });
 
   return [tableDefinition, ...comments].join('\n');
+};
+
+const buildIndexesForTable = (table: Table, schemaName: string): string[] => {
+  const usedNames = new Set<string>();
+
+  return table.columns
+    .filter((column) => column.isIndexed && !column.isPrimaryKey && !column.isUnique)
+    .map((column) => {
+      const baseRaw = `${table.name}_${column.name}_idx`;
+      const sanitized = toSnakeCase(baseRaw) || `idx_${column.id.slice(0, 8)}`;
+      const base = sanitized.startsWith('idx_') ? sanitized : `idx_${sanitized}`;
+      const indexName = ensureUniqueConstraintName(base, usedNames);
+      usedNames.add(indexName);
+
+      return `CREATE INDEX ${quoteIdent(indexName)} ON ${qualify(schemaName, table.name)} (${quoteIdent(column.name)});`;
+    });
 };
 
 const topologicallySortTables = (
@@ -275,6 +292,12 @@ export const generatePostgresSql = (model: DbModel): string => {
         getSchemaName,
       ),
     );
+
+    const indexStatements = buildIndexesForTable(
+      table,
+      getSchemaName(table.schemaId),
+    );
+    statements.push(...indexStatements);
   });
 
   return statements.join('\n');

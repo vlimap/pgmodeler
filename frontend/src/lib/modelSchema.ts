@@ -20,6 +20,7 @@ const columnSchema = z.object({
   defaultValue: z.string().optional(),
   isPrimaryKey: z.boolean(),
   isUnique: z.boolean(),
+  isIndexed: z.boolean().optional().default(false),
   comment: z.string().optional(),
 });
 

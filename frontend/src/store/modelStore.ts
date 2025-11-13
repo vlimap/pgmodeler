@@ -53,6 +53,7 @@ const createDefaultColumn = (name: string, type = 'uuid'): Column => ({
   defaultValue: undefined,
   isPrimaryKey: name === GENERIC_PK_NAME,
   isUnique: name === GENERIC_PK_NAME,
+  isIndexed: false,
 });
 
 const createDefaultTable = (schemaId: string, name: string): Table => ({
@@ -142,6 +143,10 @@ const normalizeFkCardinality = (
 const sanitizeModel = (model: DbModel): DbModel => ({
   ...model,
   tables: model.tables.map((table) => {
+    const columns = table.columns.map((column) => ({
+      ...column,
+      isIndexed: !!column.isIndexed,
+    }));
     const used = new Set<string>();
     const foreignKeys = table.foreignKeys.map((fk) => {
       const fallback = `fk_${fk.id.slice(0, 8)}`;
@@ -153,7 +158,7 @@ const sanitizeModel = (model: DbModel): DbModel => ({
         name: unique,
       };
     });
-    return { ...table, foreignKeys };
+    return { ...table, columns, foreignKeys };
   }),
 });
 
@@ -745,6 +750,7 @@ export const useModelStore = create<ModelState>()(
             defaultValue: undefined,
             isPrimaryKey: true,
             isUnique: false,
+            isIndexed: false,
           };
 
           const rightColumn: Column = {
@@ -759,6 +765,7 @@ export const useModelStore = create<ModelState>()(
             defaultValue: undefined,
             isPrimaryKey: true,
             isUnique: false,
+            isIndexed: false,
           };
 
           const fkNames = new Set<string>();

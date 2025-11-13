@@ -1,7 +1,6 @@
 // CrowFootEdge.tsx
 import {
   BaseEdge,
-  EdgeLabelRenderer,
   Position,
   type Edge,
   type EdgeProps,
@@ -29,23 +28,37 @@ export type CrowFootEdgeType = Edge<CrowFootEdgeData, 'crowFoot'>;
 const color = '#1b4070';      // brand-700
 const edgeColor = '#285d9f';  // brand-500
 
-// Pequenos ícones SVG (20x20) orientados para a direita; serão rotacionados no render.
+// Pequenos ícones renderizados dentro do próprio SVG da aresta.
 function Glyph({ kind }: { kind: Kind }) {
   const strokeW = 2;
-  return (
-    <svg width={20} height={20} viewBox="0 0 20 20" aria-hidden>
-      <g stroke={color} strokeWidth={strokeW} strokeLinecap="round" strokeLinejoin="round" fill="none">
-        {kind === 'many' ? (
-          <>
-            <path d="M2,2 L18,10" />
-            <path d="M2,18 L18,10" />
-            <path d="M4,10 L18,10" />
-          </>
-        ) : (
-          <path d="M14,5 L14,15" />
-        )}
+  if (kind === 'many') {
+    return (
+      <g
+        stroke={color}
+        strokeWidth={strokeW}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+        pointerEvents="none"
+      >
+        <path d="M-12 -8 L 10 0" />
+        <path d="M-12 8 L 10 0" />
+        <path d="M-6 0 L 10 0" />
       </g>
-    </svg>
+    );
+  }
+
+  return (
+    <g
+      stroke={color}
+      strokeWidth={strokeW}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+      pointerEvents="none"
+    >
+      <line x1="-10" y1="-8" x2="-10" y2="8" />
+    </g>
   );
 }
 
@@ -95,19 +108,13 @@ function Cardinality({
         const py = y + uy * offset;
 
         return (
-          <EdgeLabelRenderer key={`${side}-${k}-${i}`}>
-            <div
-              style={{
-                position: 'absolute',
-                transform: `translate(-50%, -50%) translate(${px}px, ${py}px) rotate(${angleDeg}deg)`,
-                pointerEvents: 'none',
-                width: 20,
-                height: 20,
-              }}
-            >
-              <Glyph kind={k} />
-            </div>
-          </EdgeLabelRenderer>
+          <g
+            key={`${side}-${k}-${i}`}
+            transform={`translate(${px} ${py}) rotate(${angleDeg})`}
+            pointerEvents="none"
+          >
+            <Glyph kind={k} />
+          </g>
         );
       })}
     </>

@@ -149,6 +149,7 @@ export const sqlToDbModelWithDbml = (sql: string): DbModel => {
         defaultValue: extractDefault(column.dbdefault ?? column.default),
         isPrimaryKey,
         isUnique: !!column.unique && !column.pk,
+        isIndexed: false,
         comment: column.note || column.comment,
       };
       columnByName.set(col.name, col);
@@ -165,6 +166,7 @@ export const sqlToDbModelWithDbml = (sql: string): DbModel => {
           if (column) {
             column.isPrimaryKey = true;
             column.isUnique = true;
+            column.isIndexed = true;
             column.nullable = false;
           }
         });
@@ -173,6 +175,14 @@ export const sqlToDbModelWithDbml = (sql: string): DbModel => {
           const column = columnByName.get(name);
           if (column && !column.isPrimaryKey) {
             column.isUnique = true;
+            column.isIndexed = true;
+          }
+        });
+      } else {
+        columns.forEach((name: string) => {
+          const column = columnByName.get(name);
+          if (column) {
+            column.isIndexed = true;
           }
         });
       }

@@ -586,6 +586,7 @@ const ErdCanvasInner = () => {
     if (!flowEl) return;
 
     const bounds = computeDiagramBounds(model.tables);
+    const exportBackground = themeMode === 'dark' ? '#0f172a' : '#ffffff';
 
     const buildTablesSnapshot = () => {
       if (model.tables.length === 0) return null;
@@ -616,7 +617,7 @@ const ErdCanvasInner = () => {
       canvas.style.position = 'relative';
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
-      canvas.style.backgroundColor = '#ffffff';
+      canvas.style.backgroundColor = exportBackground;
       canvas.style.boxSizing = 'border-box';
       canvas.style.fontFamily = `Inter, 'Helvetica Neue', Arial, sans-serif`;
       canvas.style.padding = '0';
@@ -962,7 +963,7 @@ const ErdCanvasInner = () => {
 
         if (type === 'svg') {
           const svgDataUrl = await htmlToImage.toSvg(canvas, {
-            backgroundColor: '#ffffff',
+            backgroundColor: exportBackground,
             width,
             height,
             skipAutoScale: true,
@@ -986,7 +987,7 @@ const ErdCanvasInner = () => {
 
         const pixelRatio = Math.min(3, Math.max(2, window.devicePixelRatio || 2));
         const pngDataUrl = await htmlToImage.toPng(canvas, {
-          backgroundColor: '#ffffff',
+          backgroundColor: exportBackground,
           width,
           height,
           pixelRatio,

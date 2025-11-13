@@ -270,7 +270,13 @@ export const PreviewPanel = ({
                 <input
                   type="checkbox"
                   checked={selected.column.isPrimaryKey}
-                  onChange={(e) => handleUpdateColumn({ isPrimaryKey: e.target.checked })}
+                  onChange={(e) =>
+                    handleUpdateColumn(
+                      e.target.checked
+                        ? { isPrimaryKey: true, nullable: false, isIndexed: true }
+                        : { isPrimaryKey: false }
+                    )
+                  }
                 />
                 Chave primária
               </label>
@@ -278,9 +284,35 @@ export const PreviewPanel = ({
                 <input
                   type="checkbox"
                   checked={selected.column.isUnique}
-                  onChange={(e) => handleUpdateColumn({ isUnique: e.target.checked })}
+                  onChange={(e) =>
+                    handleUpdateColumn(
+                      e.target.checked
+                        ? { isUnique: true, isIndexed: true }
+                        : { isUnique: false }
+                    )
+                  }
                 />
                 Único
+              </label>
+              <label
+                className={`inline-flex items-center gap-2 ${
+                  selected.column.isPrimaryKey || selected.column.isUnique
+                    ? 'text-slate-400 dark:text-slate-500'
+                    : ''
+                }`}
+                title={
+                  selected.column.isPrimaryKey || selected.column.isUnique
+                    ? 'Índices são gerados automaticamente para chaves primárias e colunas únicas.'
+                    : undefined
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.column.isIndexed || selected.column.isUnique || selected.column.isPrimaryKey}
+                  disabled={selected.column.isPrimaryKey || selected.column.isUnique}
+                  onChange={(e) => handleUpdateColumn({ isIndexed: e.target.checked })}
+                />
+                Índice
               </label>
             </div>
 

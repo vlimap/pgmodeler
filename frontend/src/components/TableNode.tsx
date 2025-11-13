@@ -244,6 +244,9 @@ export const TableNode = ({ data, selected }: NodeProps<TableNodeType>) => {
                   {column.isUnique && !column.isPrimaryKey && (
                     <span className={`${badgeBase} border-sky-300 bg-sky-100 text-sky-700 dark:border-sky-600 dark:bg-sky-900/30 dark:text-sky-300`}>UQ</span>
                   )}
+                  {column.isIndexed && !column.isPrimaryKey && !column.isUnique && (
+                    <span className={`${badgeBase} border-indigo-300 bg-indigo-100 text-indigo-700 dark:border-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300`}>IX</span>
+                  )}
                 </div>
               </button>
               {isDropAbove && (

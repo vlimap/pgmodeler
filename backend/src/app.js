@@ -21,6 +21,7 @@ const { marketingConsentSchema } = require('./utils/validation');
 const requireAuth = require('./middleware/requireAuth');
 const authRoutes = require('./routes/auth');
 const projectRoutes = require('./routes/projects');
+const feedbackRoutes = require('./routes/feedback');
 const { User } = require('./models');
 
 const defaultCspDirectives =
@@ -132,6 +133,7 @@ const createApp = async () => {
 
   app.use('/api/auth', authLimiter, authRoutes);
   app.use('/api/projects', projectRoutes);
+  app.use('/api/feedback', feedbackRoutes);
 
   // Retorna usuário logado para hydration do frontend.
   app.get('/api/me', (req, res) => {

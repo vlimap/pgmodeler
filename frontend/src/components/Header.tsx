@@ -48,6 +48,8 @@ export const Header = ({
 }: HeaderProps) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const logoSrc = themeMode === 'dark' ? '/logo-branca.png' : '/logo.png';
+
   const handleClickImport = () => {
     fileInputRef.current?.click();
   };
@@ -73,7 +75,7 @@ export const Header = ({
   return (
     <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-center gap-3">
-        <img src="/logo.png" alt="PG Modeler" className="h-8 w-8 rounded" />
+        <img src={logoSrc} alt="PG Modeler" className="h-8 w-8 rounded" />
         <span className="text-xl font-semibold text-slate-800 dark:text-slate-100">PG Modeler</span>
         <div className="flex items-center gap-2">
           <button type="button" className={buttonBase} onClick={onNew} title="Novo projeto">

@@ -6,6 +6,7 @@ export type Column = {
   defaultValue?: string;
   isPrimaryKey: boolean;
   isUnique: boolean;
+  isIndexed: boolean;
   comment?: string;
 };
 
